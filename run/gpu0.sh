@@ -1,0 +1,1 @@
+bash /data/soyeong/prompt_test/run/noTrainer/peft/context/baseline/mmlu/run_mmlu_baseline.sh

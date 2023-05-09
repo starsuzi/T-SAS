@@ -535,11 +535,11 @@ def main():
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
-    embedding_size = model.get_input_embeddings().weight.shape[0]
-    if len(tokenizer) > embedding_size:
-        model.resize_token_embeddings(len(tokenizer))
-    if model.config.decoder_start_token_id is None:
-        raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
+    # embedding_size = model.get_input_embeddings().weight.shape[0]
+    # if len(tokenizer) > embedding_size:
+    #     model.resize_token_embeddings(len(tokenizer))
+    # if model.config.decoder_start_token_id is None:
+    #     raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
 
     prefix = args.source_prefix if args.source_prefix is not None else ""
 

@@ -66,6 +66,9 @@ def eval(args, subject, model, tokenizer, dev_df, test_df):
     all_probs = []
     answers = choices[: test_df.shape[1] - 2]
 
+    # rows with long prompt
+    lst_long_row = []
+
     for i in range(test_df.shape[0]):
         # get prompt and make sure it fits
         k = args.ntrain
@@ -75,13 +78,26 @@ def eval(args, subject, model, tokenizer, dev_df, test_df):
         prompt = train_prompt + prompt_end
 
         input_ids = tokenizer(prompt, return_tensors="pt").input_ids.cuda()
+        # if subject == 'high_school_european_history':
+        #     import pdb; pdb.set_trace()
 
-        while input_ids.shape[-1] > 2048:
+        
+        # if tokenizer(prompt_end, return_tensors="pt").input_ids.shape[-1] > 384:
+        #     #import pdb; pdb.set_trace()
+        #     lst_long_row.append(i)
+        #     continue
+
+        while input_ids.shape[-1] > 384 and k >=0: #2048:
             k -= 1
             train_prompt = gen_prompt(dev_df, subject, k)
             prompt = train_prompt + prompt_end
             input_ids = tokenizer(prompt, return_tensors="pt").input_ids.cuda()
-        #import pdb; pdb.set_trace()
+
+        if k < 0 :
+            lst_long_row.append(i)
+            continue
+            #import pdb; pdb.set_trace
+
         label = test_df.iloc[i, test_df.shape[1] - 1]
 
         decoder_input_ids = tokenizer("", return_tensors="pt").input_ids.cuda()
@@ -112,13 +128,18 @@ def eval(args, subject, model, tokenizer, dev_df, test_df):
         cors.append(cor)
         all_probs.append(probs)
 
+
+
     acc = np.mean(cors)
     cors = np.array(cors)
 
     all_probs = np.array(all_probs)
     print("Average accuracy {:.3f} - {}".format(acc, subject))
 
-    return cors, acc, all_probs
+    # Drop rows with long prompts
+    test_df = test_df.drop(labels=lst_long_row, axis=0)
+
+    return cors, acc, all_probs, test_df
 
 
 def main(args):
@@ -164,7 +185,7 @@ def main(args):
             os.path.join(args.data_dir, "test", subject + "_test.csv"), header=None
         )
 
-        cors, acc, probs = eval(args, subject, model, tokenizer, dev_df, test_df)
+        cors, acc, probs, test_df = eval(args, subject, model, tokenizer, dev_df, test_df)
         subcats = subcategories[subject]
         for subcat in subcats:
             subcat_cors[subcat].append(cors)
@@ -198,7 +219,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ntrain", "-k", type=int, default=5)
-    parser.add_argument("--ngpu", "-g", type=int, default=2)
+    parser.add_argument("--ngpu", "-g", type=int, default=1)
     parser.add_argument("--data_dir", "-d", type=str, default="data")
     parser.add_argument("--save_dir", "-s", type=str, default="results")
     parser.add_argument(

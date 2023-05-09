@@ -66,6 +66,8 @@ import pandas as pd
 from mmlu_categories import subcategories, categories
 from collections import Counter
 
+import gc
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -402,12 +404,14 @@ def run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, args):
                 .cpu()
                 .numpy()
             )
+            
             pred = {0: "A", 1: "B", 2: "C", 3: "D"}[np.argmax(probs)]
 
             logger.info('==========================================')
             logger.info(tokenizer.batch_decode(input_ids, skip_special_tokens=True))
             logger.info('Prediction : ')
             logger.info(pred)
+            logger.info(probs)
 
             lst_mc_preds.append(pred)
 
@@ -553,78 +557,94 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
         
         return model_inputs
 
-    # test time tuning
-    model.eval()
     
-    test_time_tuning_examples = {}
-    lst_input = []
-    lst_pred_label = []
+    model.eval()
+    # test time tuning
+    if args.do_test_time_tuning:
+        test_time_tuning_examples = {}
+        lst_input = []
+        lst_pred_label = []
 
-    for i in range(test_df.shape[0]):
-        # get prompt and make sure it fits
-        k = args.ntrain
-        prompt_end = format_example(test_df, i, include_answer=False)
-        train_prompt = gen_prompt(dev_df, subject, k)
-        prompt = train_prompt + prompt_end
+        # rows with long prompt
+        lst_long_row = []
 
-        input_ids = tokenizer(prompt, return_tensors="pt").input_ids.cuda()
-
-        while input_ids.shape[-1] > args.max_seq_length: #2048:
-            k -= 1
+        for i in range(test_df.shape[0]):
+            # get prompt and make sure it fits
+            k = args.ntrain
+            prompt_end = format_example(test_df, i, include_answer=False)
             train_prompt = gen_prompt(dev_df, subject, k)
             prompt = train_prompt + prompt_end
+
             input_ids = tokenizer(prompt, return_tensors="pt").input_ids.cuda()
-        
-        
-        
-        lst_input.append(prompt)
-        #import pdb; pdb.set_trace()        
-        decoder_input_ids = tokenizer("", return_tensors="pt").input_ids.cuda()
-        decoder_input_ids = model._shift_right(decoder_input_ids)
 
-        # gold label
-        label = test_df.iloc[i, test_df.shape[1] - 1]
+            while input_ids.shape[-1] > args.max_seq_length and k >=0 : #2048:
+                k -= 1
+                train_prompt = gen_prompt(dev_df, subject, k)
+                prompt = train_prompt + prompt_end
+                input_ids = tokenizer(prompt, return_tensors="pt").input_ids.cuda()
+            
+            if k < 0 :
+                # lst_long_row.append(i)
+                continue            
+            
+            lst_input.append(prompt)
+            #import pdb; pdb.set_trace()        
+            decoder_input_ids = tokenizer("", return_tensors="pt").input_ids.cuda()
+            decoder_input_ids = model._shift_right(decoder_input_ids)
 
-        # mc drop
-        lst_mc_preds = run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, args)
+            # gold label
+            label = test_df.iloc[i, test_df.shape[1] - 1]
+
+            # mc drop
+            lst_mc_preds = run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, args)
+            #import pdb; pdb.set_trace()
+
+            # majority vote
+            pred_label = run_majority_vote(tokenizer, lst_mc_preds, args)
+            lst_pred_label.append(pred_label)
+
+            logger.info('Gold Answer')
+            logger.info(label)
+
+
+        # test_time_tuning
+        test_time_tuning_examples['input_ids'] = lst_input
+        test_time_tuning_examples['labels'] = lst_pred_label
+
+        test_time_tuning_examples = datasets.Dataset.from_dict(test_time_tuning_examples)
+
+        test_time_tuning_dataset = test_time_tuning_examples.map(
+                        preprocess_function,
+                        batched=True,
+                        num_proc=args.preprocessing_num_workers,
+                        # remove_columns=test_time_tuning_examples.column_names,
+                        load_from_cache_file=not args.overwrite_cache,
+                    )
+
+
+        test_time_tuning_dataloader = DataLoader(
+            test_time_tuning_dataset, collate_fn=data_collator, shuffle=False, batch_size=args.per_device_eval_batch_size
+        )
+    
+        del test_time_tuning_dataset
+        del test_time_tuning_examples
+
+        #import pdb; pdb.set_trace()
+        test_time_tuning_dataloader = accelerator.prepare(test_time_tuning_dataloader)
+        test_time_tuning(model, optimizer, lr_scheduler, tokenizer, test_time_tuning_dataloader, accelerator, args)
         #import pdb; pdb.set_trace()
 
-        # majority vote
-        pred_label = run_majority_vote(tokenizer, lst_mc_preds, args)
-        lst_pred_label.append(pred_label)
-
-
-    # test_time_tuning
-    test_time_tuning_examples['input_ids'] = lst_input
-    test_time_tuning_examples['labels'] = lst_pred_label
-
-    test_time_tuning_examples = datasets.Dataset.from_dict(test_time_tuning_examples)
-
-    test_time_tuning_dataset = test_time_tuning_examples.map(
-                    preprocess_function,
-                    batched=True,
-                    num_proc=args.preprocessing_num_workers,
-                    # remove_columns=test_time_tuning_examples.column_names,
-                    load_from_cache_file=not args.overwrite_cache,
-                )
-
-
-    test_time_tuning_dataloader = DataLoader(
-        test_time_tuning_dataset, collate_fn=data_collator, shuffle=False, batch_size=args.per_device_eval_batch_size
-    )
-   
-    #import pdb; pdb.set_trace()
-    test_time_tuning_dataloader = accelerator.prepare(test_time_tuning_dataloader)
-    test_time_tuning(model, optimizer, lr_scheduler, tokenizer, test_time_tuning_dataloader, accelerator, args)
-    #import pdb; pdb.set_trace()
-
+        del test_time_tuning_dataloader
         
     # actual inference
     cors = []
     all_probs = []
 
     answers = choices[: test_df.shape[1] - 2]
-    
+
+    # rows with long prompt
+    lst_long_row = []
+
     model.eval()
     with torch.no_grad():
         for i in range(test_df.shape[0]):
@@ -635,13 +655,18 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
             prompt = train_prompt + prompt_end
 
             input_ids = tokenizer(prompt, return_tensors="pt").input_ids.cuda()
+ 
 
-            while input_ids.shape[-1] > args.max_seq_length: #2048:
+            while input_ids.shape[-1] > args.max_seq_length and k >=0 : #2048:
                 k -= 1
                 train_prompt = gen_prompt(dev_df, subject, k)
                 prompt = train_prompt + prompt_end
                 input_ids = tokenizer(prompt, return_tensors="pt").input_ids.cuda()
-
+       
+            if k < 0 :
+                lst_long_row.append(i)
+                continue
+                
             label = test_df.iloc[i, test_df.shape[1] - 1]
 
             decoder_input_ids = tokenizer("", return_tensors="pt").input_ids.cuda()
@@ -680,8 +705,99 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
         print("Average accuracy {:.3f} - {}".format(acc, subject))
         logger.info("Average accuracy {:.3f} - {}".format(acc, subject))
 
-    return cors, acc, all_probs
+    # Drop rows with long prompts
+    test_df = test_df.drop(labels=lst_long_row, axis=0)
+
+    return cors, acc, all_probs, test_df
     
+def load_model(args, test_df):
+    # Load pretrained model and tokenizer
+    # eval peft model
+    if args.eval_peft_model:
+        peft_model_id = args.model_name_or_path
+        config = PeftConfig.from_pretrained(peft_model_id)
+        model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path)
+        model = PeftModel.from_pretrained(model, peft_model_id)
+        tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
+
+    else:
+    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
+    # download model & vocab.
+        if args.config_name:
+            config = AutoConfig.from_pretrained(args.config_name)
+        elif args.model_name_or_path:
+            config = AutoConfig.from_pretrained(args.model_name_or_path)
+        else:
+            config = CONFIG_MAPPING[args.model_type]()
+            logger.warning("You are instantiating a new config instance from scratch.")
+
+        if args.tokenizer_name:
+            tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=not args.use_slow_tokenizer)
+        elif args.model_name_or_path:
+            tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
+        else:
+            raise ValueError(
+                "You are instantiating a new tokenizer from scratch. This is not supported by this script."
+                "You can do it from another script, save it, and load it from here, using --tokenizer_name."
+            )
+
+        if args.model_name_or_path:
+            model = AutoModelForSeq2SeqLM.from_pretrained(
+                args.model_name_or_path,
+                from_tf=bool(".ckpt" in args.model_name_or_path),
+                config=config,
+            )
+        else:
+            logger.info("Training new model from scratch")
+            model = AutoModelForSeq2SeqLM.from_config(config)
+
+        # TODO: peft
+        if args.train_peft_model:
+            peft_config = LoraConfig(
+            task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+            )
+            model = get_peft_model(model, peft_config)
+            model.print_trainable_parameters()
+
+
+    # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
+    # on a small vocab and want a smaller embedding size, remove this test.
+    # embedding_size = model.get_input_embeddings().weight.shape[0]
+    # if len(tokenizer) > embedding_size:
+    #     model.resize_token_embeddings(len(tokenizer))
+    # if model.config.decoder_start_token_id is None:
+    #     raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
+
+    # Optimizer
+    # Split weights in two groups, one with weight decay and the other not.
+    no_decay = ["bias", "LayerNorm.weight", "layer_norm.weight"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+            "weight_decay": args.weight_decay,
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
+        },
+    ]
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
+
+    # Scheduler and math around the number of training steps.
+    overrode_max_train_steps = False
+    num_update_steps_per_epoch = math.ceil(len(test_df) / args.gradient_accumulation_steps)
+    if args.max_train_steps is None:
+        args.max_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
+        overrode_max_train_steps = True
+
+    lr_scheduler = get_scheduler(
+        name=args.lr_scheduler_type,
+        optimizer=optimizer,
+        num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
+        num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
+    )
+
+    return model, tokenizer, optimizer, lr_scheduler
 
 def main():
     args = parse_args()
@@ -756,65 +872,7 @@ def main():
             os.makedirs(args.output_dir, exist_ok=True)
     accelerator.wait_for_everyone()
 
-    # Load pretrained model and tokenizer
-    # eval peft model
-    if args.eval_peft_model:
-        peft_model_id = args.model_name_or_path
-        config = PeftConfig.from_pretrained(peft_model_id)
-        model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path)
-        model = PeftModel.from_pretrained(model, peft_model_id)
-        tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
-
-    else:
-    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
-    # download model & vocab.
-        if args.config_name:
-            config = AutoConfig.from_pretrained(args.config_name)
-        elif args.model_name_or_path:
-            config = AutoConfig.from_pretrained(args.model_name_or_path)
-        else:
-            config = CONFIG_MAPPING[args.model_type]()
-            logger.warning("You are instantiating a new config instance from scratch.")
-
-        if args.tokenizer_name:
-            tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=not args.use_slow_tokenizer)
-        elif args.model_name_or_path:
-            tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
-        else:
-            raise ValueError(
-                "You are instantiating a new tokenizer from scratch. This is not supported by this script."
-                "You can do it from another script, save it, and load it from here, using --tokenizer_name."
-            )
-
-        if args.model_name_or_path:
-            model = AutoModelForSeq2SeqLM.from_pretrained(
-                args.model_name_or_path,
-                from_tf=bool(".ckpt" in args.model_name_or_path),
-                config=config,
-            )
-        else:
-            logger.info("Training new model from scratch")
-            model = AutoModelForSeq2SeqLM.from_config(config)
-
-        # TODO: peft
-        if args.train_peft_model:
-            peft_config = LoraConfig(
-            task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
-            )
-            model = get_peft_model(model, peft_config)
-            model.print_trainable_parameters()
-
-
-    # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
-    # on a small vocab and want a smaller embedding size, remove this test.
-    embedding_size = model.get_input_embeddings().weight.shape[0]
-    if len(tokenizer) > embedding_size:
-        model.resize_token_embeddings(len(tokenizer))
-    if model.config.decoder_start_token_id is None:
-        raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
-
     prefix = args.source_prefix if args.source_prefix is not None else ""
-
 
     # data
     subjects = sorted(
@@ -844,42 +902,58 @@ def main():
             os.path.join(args.dataset_name, "test", subject + "_test.csv"), header=None
         )
 
-        # Optimizer
-        # Split weights in two groups, one with weight decay and the other not.
-        no_decay = ["bias", "LayerNorm.weight", "layer_norm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-                "weight_decay": 0.0,
-            },
-        ]
-        optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
-
-        # Scheduler and math around the number of training steps.
-        overrode_max_train_steps = False
-        num_update_steps_per_epoch = math.ceil(len(test_df) / args.gradient_accumulation_steps)
-        if args.max_train_steps is None:
-            args.max_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
-            overrode_max_train_steps = True
-
-        lr_scheduler = get_scheduler(
-            name=args.lr_scheduler_type,
-            optimizer=optimizer,
-            num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
-            num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
-        )
+        # model for each_subject
+        model, tokenizer, optimizer, lr_scheduler = load_model(args, test_df)
+        #import pdb; pdb.set_trace()
 
         # Prepare everything with our `accelerator`.
         model, optimizer, dev_df, test_df, lr_scheduler = accelerator.prepare(
                     model, optimizer, dev_df, test_df, lr_scheduler
                 )
-        import pdb; pdb.set_trace()
-        cors, acc, probs = eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_df, accelerator)
-        # model_copy = copy.deepcopy(model)
+        # import pdb; pdb.set_trace()
+        cors, acc, probs, test_df = eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_df, accelerator)
+        
+        subcats = subcategories[subject]
+        for subcat in subcats:
+            subcat_cors[subcat].append(cors)
+            for key in categories.keys():
+                if subcat in categories[key]:
+                    cat_cors[key].append(cors)
+        all_cors.append(cors)
+
+        test_df["{}_correct".format(args.model_name_or_path)] = cors
+        for j in range(probs.shape[1]):
+            choice = choices[j]
+            test_df["{}_choice{}_probs".format(args.model_name_or_path, choice)] = probs[:, j]
+        test_df.to_csv(
+            os.path.join(
+                args.output_dir, "results_{}".format(args.model_name_or_path), "{}.csv".format(subject)
+            ),
+            index=None,
+        )
+
+        model.cpu()
+        
+        del model
+        del optimizer
+        del lr_scheduler
+        
+        gc.collect()
+        with torch.no_grad():
+            torch.cuda.empty_cache()
+
+
+
+    for subcat in subcat_cors:
+        subcat_acc = np.mean(np.concatenate(subcat_cors[subcat]))
+        print("Average accuracy {:.3f} - {}".format(subcat_acc, subcat))
+
+    for cat in cat_cors:
+        cat_acc = np.mean(np.concatenate(cat_cors[cat]))
+        print("Average accuracy {:.3f} - {}".format(cat_acc, cat))
+    weighted_acc = np.mean(np.concatenate(all_cors))
+    print("Average accuracy: {:.3f}".format(weighted_acc))
+
 
 
 
