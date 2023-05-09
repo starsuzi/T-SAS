@@ -3,12 +3,12 @@ MODEL=google/flan-t5-xl
 DATASET_NAME=data/mmlu
 DATASET_NAME_FILENAME=mmlu
 
-MC_DROP_NUM=15
+MC_DROP_NUM=5
 EPOCH=1
 OUTPUT_DIR=./outputs/${DATASET_NAME_FILENAME}/context/test_time_tuning/model/${MODEL}/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
-CUDA_VISIBLE_DEVICES=0 python run_mmlu.py \
+CUDA_VISIBLE_DEVICES=2 python run_mmlu.py \
     --model_name_or_path ${MODEL} \
     --dataset_name ${DATASET_NAME} \
     --learning_rate 3e-5 \
