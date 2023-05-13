@@ -708,8 +708,8 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
         cors = np.array(cors)
 
         all_probs = np.array(all_probs)
-        print("Average accuracy {:.3f} - {}".format(acc, subject))
-        logger.info("Average accuracy {:.3f} - {}".format(acc, subject))
+        print("Average accuracy {:.4f} - {}".format(acc, subject))
+        logger.info("Average accuracy {:.4f} - {}".format(acc, subject))
 
     # Drop rows with long prompts
     test_df = test_df.drop(labels=lst_long_row, axis=0)
