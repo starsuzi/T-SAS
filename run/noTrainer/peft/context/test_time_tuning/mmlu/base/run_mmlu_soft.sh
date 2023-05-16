@@ -5,9 +5,9 @@ DATASET_NAME_FILENAME=mmlu
 SUBJECT_FILE_PATH=data/mmlu/test
 
 
-for MC_DROP_NUM in 5 10 15 20 25 30
+for MC_DROP_NUM in 5 15 25
 do
-    for EPOCH in 10 15 20 25 30
+    for EPOCH in 10 20 30
     do
         OUTPUT_DIR=./outputs/${DATASET_NAME_FILENAME}/context/test_time_tuning/model/${MODEL}/no_lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/soft_label/${DATE}
         mkdir -p ${OUTPUT_DIR}

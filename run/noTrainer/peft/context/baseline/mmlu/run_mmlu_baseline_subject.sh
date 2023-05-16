@@ -8,7 +8,7 @@ SUBJECT_FILE_PATH=data/mmlu/test
 
 # MC_DROP_NUM=15
 # EPOCH=2
-OUTPUT_DIR=./outputs/${DATASET_NAME_FILENAME}/context/baseline/model/${MODEL}/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
+OUTPUT_DIR=./outputs/${DATASET_NAME_FILENAME}/context/baseline/model/${MODEL}/mc/${MC_DROP_NUM}/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
 for subject in $SUBJECT_FILE_PATH/*

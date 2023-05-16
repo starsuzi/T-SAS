@@ -303,6 +303,13 @@ def parse_args():
         default=None,
         help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
     )
+    # TODO 
+    parser.add_argument(
+            "--max_test_time_train_steps",
+            type=int,
+            default=None,
+            help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
+        )
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
@@ -1063,46 +1070,83 @@ def main():
     ]
     optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
 
-    # Scheduler and math around the number of training steps.
-    overrode_max_train_steps = False
+
     if args.do_train:
-        assert args.do_test_time_tuning == False
+        # Scheduler and math around the number of training steps.
+        overrode_max_train_steps = False
         num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+
+        if args.max_train_steps is None:
+            args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+            overrode_max_train_steps = True
+
+        lr_scheduler_train = get_scheduler(
+            name=args.lr_scheduler_type,
+            optimizer=optimizer,
+            num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
+            num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
+        )
+
+
     elif args.do_test_time_tuning:
-        assert args.do_train == False
+        # Scheduler and math around the number of training steps.
+        overrode_max_train_steps = False
+
         num_update_steps_per_epoch = math.ceil(len(eval_dataloader) / args.gradient_accumulation_steps)
 
-    if args.max_train_steps is None:
-        args.max_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
-        overrode_max_train_steps = True
+        if args.max_test_time_train_steps is None:
+            args.max_test_time_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
+            overrode_max_train_steps = True
 
-    lr_scheduler = get_scheduler(
-        name=args.lr_scheduler_type,
-        optimizer=optimizer,
-        num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
-        num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
-    )
+        lr_scheduler_test_time_tuning = get_scheduler(
+            name=args.lr_scheduler_type,
+            optimizer=optimizer,
+            num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
+            num_training_steps=args.max_test_time_train_steps * args.gradient_accumulation_steps,
+        )
+
+    # if args.max_train_steps is None:
+    #     args.max_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
+    #     overrode_max_train_steps = True
+
+    # lr_scheduler = get_scheduler(
+    #     name=args.lr_scheduler_type,
+    #     optimizer=optimizer,
+    #     num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
+    #     num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
+    # )
 
     # Prepare everything with our `accelerator`.
+    model, optimizer, eval_dataloader = accelerator.prepare(
+        model, optimizer, eval_dataloader
+    )
+
     if args.do_test_time_tuning:
-        model, optimizer, train_dataloader, eval_dataloader, test_time_tuning_dataloader, lr_scheduler = accelerator.prepare(
-            model, optimizer, train_dataloader, eval_dataloader, test_time_tuning_dataloader, lr_scheduler
+        test_time_tuning_dataloader, lr_scheduler_test_time_tuning = accelerator.prepare(
+            test_time_tuning_dataloader, lr_scheduler_test_time_tuning
         )
-    else:
-        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
-            model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
+    if args.do_train:
+        train_dataloader, lr_scheduler_train = accelerator.prepare(
+            train_dataloader, lr_scheduler_train
         )
 
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     if args.do_train:
-        assert args.do_test_time_tuning == False
         num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
 
         if overrode_max_train_steps:
             args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
         # Afterwards we recalculate our number of training epochs
         args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
+
+    if args.do_test_time_tuning:
+        num_update_steps_per_epoch = math.ceil(len(eval_dataloader) / args.gradient_accumulation_steps)
+
+        if overrode_max_train_steps:
+            args.max_test_time_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
+        # Afterwards we recalculate our number of training epochs
+        args.test_time_tuning_epoch = math.ceil(args.max_test_time_train_steps / num_update_steps_per_epoch)
 
 
     # Figure out how many steps we should save the Accelerator states
@@ -1206,7 +1250,7 @@ def main():
                     loss = outputs.loss
                     accelerator.backward(loss)
                     optimizer.step()
-                    lr_scheduler.step()
+                    lr_scheduler_train.step()
                     optimizer.zero_grad()
 
                     logger.info("Loss:{} ".format(loss))
@@ -1384,7 +1428,7 @@ def main():
                     loss = outputs.loss
                     accelerator.backward(loss)
                     optimizer.step()
-                    lr_scheduler.step()
+                    lr_scheduler_test_time_tuning.step()
                     optimizer.zero_grad() 
 
                     # logger.info("Test-time Loss:{} ".format(loss))   
@@ -1392,7 +1436,8 @@ def main():
                     # We keep track of the loss at each epoch
                     total_loss = total_loss + loss.cpu().detach().float()
 
-            logger.info("Epoch %d Loss:{} ".format(total_loss / len(test_time_tuning_dataloader)), epoch) 
+            logger.info("Epoch %d Loss:{} ".format(total_loss / len(lst_batch_with_pred_labels)), epoch) 
+            #import pdb; pdb.set_trace()
 
             # save chenkpoint
             if args.checkpointing_steps == "epoch":
@@ -1437,16 +1482,13 @@ def main():
                 pred_label = run_majority_vote(tokenizer, lst_mc_generated_tokens, args)
 
                 # update batch labels to predicted labels
-                # import pdb; pdb.set_trace()
                 batch['labels'] = pred_label
                 lst_batch_with_pred_labels.append(batch)
                 
-                #test_time_tuning(model, tokenizer, batch, pred_label, args)
-            
+            # import pdb; pdb.set_trace()
             # test_time_tuning
             test_time_tuning(model, tokenizer, lst_batch_with_pred_labels, args)
 
-            #import pdb; pdb.set_trace()
 
 
         # actual inference
