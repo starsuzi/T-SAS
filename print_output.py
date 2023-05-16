@@ -65,15 +65,15 @@ for subcat in subcat_cors:
     #import pdb; pdb.set_trace()
     if subcat_cors[subcat] != []:
         subcat_acc = np.mean(np.concatenate(subcat_cors[subcat]))
-        print("Average accuracy {:.3f} - {}".format(subcat_acc, subcat))
-        logger.info("Average accuracy {:.3f} - {}".format(subcat_acc, subcat))
+        print("Average accuracy {:.4f} - {}".format(subcat_acc, subcat))
+        logger.info("Average accuracy {:.4f} - {}".format(subcat_acc, subcat))
 
 for cat in cat_cors:
     if subcat_cors[subcat] != []:
         cat_acc = np.mean(np.concatenate(cat_cors[cat]))
-        print("Average accuracy {:.3f} - {}".format(cat_acc, cat))
-        logger.info("Average accuracy {:.3f} - {}".format(cat_acc, cat))
+        print("Average accuracy {:.4f} - {}".format(cat_acc, cat))
+        logger.info("Average accuracy {:.4f} - {}".format(cat_acc, cat))
 
 weighted_acc = np.mean(np.concatenate(all_cors))
-print("Average accuracy: {:.3f}".format(weighted_acc))
-logger.info("Average accuracy: {:.3f}".format(weighted_acc))
+print("Average accuracy: {:.4f}".format(weighted_acc))
+logger.info("Average accuracy: {:.4f}".format(weighted_acc))

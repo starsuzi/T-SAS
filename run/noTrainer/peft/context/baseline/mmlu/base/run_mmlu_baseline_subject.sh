@@ -1,7 +1,7 @@
  #!/bin/bash
 
 DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
-MODEL=google/flan-t5-xl
+MODEL=google/flan-t5-base
 DATASET_NAME=data/mmlu
 DATASET_NAME_FILENAME=mmlu
 SUBJECT_FILE_PATH=data/mmlu/test
@@ -13,7 +13,7 @@ mkdir -p ${OUTPUT_DIR}
 
 for subject in $SUBJECT_FILE_PATH/*
 do 
-    CUDA_VISIBLE_DEVICES=2 python run_mmlu_subject.py \
+    CUDA_VISIBLE_DEVICES=4 python run_mmlu_subject.py \
         --subject_file_path ${SUBJECT_FILE_PATH} \
         --subject ${subject} \
         --model_name_or_path ${MODEL} \

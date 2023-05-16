@@ -658,6 +658,7 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
         lst_input = []
         lst_pred_label = []
         lst_pred_soft_label = []
+        lst_gold_label = []
 
         # rows with long prompt
         lst_long_row = []
@@ -700,12 +701,14 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
 
             logger.info('Gold Answer')
             logger.info(label)
+            lst_gold_label.append(label)
+            
             #import pdb; pdb.set_trace()
 
 
         # test_time_tuning
         test_time_tuning_examples['input_ids'] = lst_input
-        test_time_tuning_examples['labels'] = lst_pred_label
+        test_time_tuning_examples['labels'] = lst_gold_label #lst_pred_label
         test_time_tuning_examples['soft_labels'] = lst_pred_soft_label
 
         #import pdb; pdb.set_trace()
