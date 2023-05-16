@@ -369,8 +369,8 @@ def parse_args():
     args = parser.parse_args()
 
     # Sanity checks
-    if args.dataset_name is None and args.train_file is None and args.validation_file is None:
-        raise ValueError("Need either a dataset name or a training/validation file.")
+    if args.dataset_name is None and args.validation_file is None:
+        raise ValueError("Need either a dataset name or a validation file.")
     else:
         if args.train_file is not None:
             extension = args.train_file.split(".")[-1]
@@ -387,9 +387,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_summarization_no_trainer", args)
 
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
@@ -476,7 +473,7 @@ def main():
             data_files["train"] = args.train_file
         if args.validation_file is not None:
             data_files["validation"] = args.validation_file
-        extension = args.train_file.split(".")[-1]
+        extension = args.validation_file.split(".")[-1]
         raw_datasets = load_dataset(extension, data_files=data_files)
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
@@ -794,31 +791,30 @@ def main():
         #import pdb; pdb.set_trace()
         return model_inputs
         
+    if args.do_train:
+        if args.train_column not in raw_datasets:
+            raise ValueError("--do_train requires a train dataset")
+        train_dataset = raw_datasets[args.train_column]
 
-    if args.train_column not in raw_datasets:
-        raise ValueError("--do_train requires a train dataset")
-    train_dataset = raw_datasets[args.train_column]
-
-    if args.max_train_samples is not None:
-        # We will select sample from whole data if agument is specified
-        train_dataset = train_dataset.select(range(args.max_train_samples))
-
-    # Create train feature from dataset
-    with accelerator.main_process_first():
-        train_dataset = train_dataset.map(
-            preprocess_function,
-            batched=True,
-            num_proc=args.preprocessing_num_workers,
-            remove_columns=column_names,
-            load_from_cache_file=not args.overwrite_cache,
-            desc="Running tokenizer on train dataset",
-        )
         if args.max_train_samples is not None:
-            # Number of samples might increase during Feature Creation, We select only specified max samples
+            # We will select sample from whole data if agument is specified
             train_dataset = train_dataset.select(range(args.max_train_samples))
+
+        # Create train feature from dataset
+        with accelerator.main_process_first():
+            train_dataset = train_dataset.map(
+                preprocess_function,
+                batched=True,
+                num_proc=args.preprocessing_num_workers,
+                remove_columns=column_names,
+                load_from_cache_file=not args.overwrite_cache,
+                desc="Running tokenizer on train dataset",
+            )
+            if args.max_train_samples is not None:
+                # Number of samples might increase during Feature Creation, We select only specified max samples
+                train_dataset = train_dataset.select(range(args.max_train_samples))
     
     
-    #import pdb; pdb.set_trace()
     if args.val_column not in raw_datasets:
         raise ValueError("--do_eval requires a validation dataset")
     eval_examples = raw_datasets[args.val_column]
@@ -911,9 +907,9 @@ def main():
             test_time_tuning_dataset = test_time_tuning_dataset.select(range(args.max_test_time_tuning_samples))
 
 
-    # Log a few random samples from the training set:
-    for index in random.sample(range(len(train_dataset)), 1):
-        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+    # # Log a few random samples from the training set:
+    # for index in random.sample(range(len(train_dataset)), 1):
+    #     logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     label_pad_token_id = -100 if args.ignore_pad_token_for_loss else tokenizer.pad_token_id
 
@@ -1023,11 +1019,11 @@ def main():
         return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
 
+    if args.do_train:
+        train_dataloader = DataLoader(
+            train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
+        )
 
-    train_dataloader = DataLoader(
-        train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
-    )
-    #import pdb; pdb.set_trace()
     if args.without_multi_features:
         eval_dataset_for_model = eval_dataset
         eval_dataloader = DataLoader(
@@ -1099,11 +1095,15 @@ def main():
 
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    if overrode_max_train_steps:
-        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-    # Afterwards we recalculate our number of training epochs
-    args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
+    if args.do_train:
+        assert args.do_test_time_tuning == False
+        num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+
+        if overrode_max_train_steps:
+            args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+        # Afterwards we recalculate our number of training epochs
+        args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
+
 
     # Figure out how many steps we should save the Accelerator states
     checkpointing_steps = args.checkpointing_steps
@@ -1119,7 +1119,6 @@ def main():
         accelerator.init_trackers("summarization_no_trainer", experiment_config)
 
     # Metric
-    #import pdb; pdb.set_trace()
     metric = evaluate.load("squad_v2" if args.version_2_with_negative else "squad")
 
     # Create and fill numpy array of size len_of_validation_data * max_length_of_output_tensor
