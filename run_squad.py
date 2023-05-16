@@ -1069,7 +1069,13 @@ def main():
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(len(eval_dataloader) / args.gradient_accumulation_steps)
+    if args.do_train:
+        assert args.do_test_time_tuning == False
+        num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    elif args.do_test_time_tuning:
+        assert args.do_train == False
+        num_update_steps_per_epoch = math.ceil(len(eval_dataloader) / args.gradient_accumulation_steps)
+
     if args.max_train_steps is None:
         args.max_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
         overrode_max_train_steps = True
@@ -1188,8 +1194,7 @@ def main():
 
         for epoch in range(starting_epoch, args.num_train_epochs):
             model.train()
-            if args.with_tracking:
-                total_loss = 0
+            total_loss = 0
             for step, batch in enumerate(train_dataloader):
                 # We need to skip steps until we reach the resumed step
                 if args.resume_from_checkpoint and epoch == starting_epoch:
@@ -1200,15 +1205,16 @@ def main():
                 with accelerator.accumulate(model):
                     outputs = model(**batch)
                     loss = outputs.loss
-                    # We keep track of the loss at each epoch
-                    if args.with_tracking:
-                        total_loss += loss.detach().float()
                     accelerator.backward(loss)
                     optimizer.step()
                     lr_scheduler.step()
                     optimizer.zero_grad()
 
                     logger.info("Loss:{} ".format(loss))
+
+                    # We keep track of the loss at each epoch
+                    total_loss = total_loss + loss.cpu().detach().float()
+
 
                 # Checks if the accelerator has performed an optimization step behind the scenes
                 if accelerator.sync_gradients:
@@ -1370,6 +1376,7 @@ def main():
 
         for epoch in range(0, args.test_time_tuning_epoch):
             model.train()
+            total_loss = 0
             for step, batch in enumerate(lst_batch_with_pred_labels):
                 batch['decoder_input_ids'] = None
                 #import pdb; pdb.set_trace()
@@ -1381,8 +1388,12 @@ def main():
                     lr_scheduler.step()
                     optimizer.zero_grad() 
 
-                    logger.info("Test-time Loss:{} ".format(loss))   
+                    # logger.info("Test-time Loss:{} ".format(loss))   
 
+                    # We keep track of the loss at each epoch
+                    total_loss = total_loss + loss.cpu().detach().float()
+
+            logger.info("Epoch %d Loss:{} ".format(total_loss / len(test_time_tuning_dataloader)), epoch) 
 
             # save chenkpoint
             if args.checkpointing_steps == "epoch":

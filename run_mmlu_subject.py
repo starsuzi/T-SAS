@@ -503,7 +503,8 @@ def test_time_tuning(model, optimizer,lr_scheduler, tokenizer, test_time_tuning_
                     lr_scheduler.step()
                     optimizer.zero_grad() 
 
-                    total_loss = total_loss + loss
+                    # total_loss = total_loss + loss
+                    total_loss = total_loss + loss.cpu().detach().float()
 
                     # logger.info("Test-time Loss:{} ".format(loss))   
             
@@ -543,7 +544,8 @@ def test_time_tuning(model, optimizer,lr_scheduler, tokenizer, test_time_tuning_
                     lr_scheduler.step()
                     optimizer.zero_grad() 
 
-                    total_loss = total_loss + loss
+                    # total_loss = total_loss + loss
+                    total_loss = total_loss + loss.cpu().detach().float()
 
                     # logger.info("Test-time Loss:{} ".format(loss))   
 
