@@ -5,6 +5,7 @@ DATASET_NAME=squad
 OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
+
 CUDA_VISIBLE_DEVICES=2 python run_squad.py \
     --model_name_or_path ${MODEL} \
     --dataset_name ${DATASET_NAME} \
@@ -17,11 +18,8 @@ CUDA_VISIBLE_DEVICES=2 python run_squad.py \
     --output_dir ${OUTPUT_DIR} \
     --overwrite_cache \
     --val_column 'validation' \
-    --do_eval \
-    --max_train_samples 5 \
-    # --max_eval_samples 5 \
-    # --max_test_time_tuning_samples 5
-    
+    --do_eval
+
     #--num_beams 1 \
     # --max_train_samples 5 \
     # --max_eval_samples 5 \

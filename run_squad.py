@@ -1253,11 +1253,10 @@ def main():
                     lr_scheduler_train.step()
                     optimizer.zero_grad()
 
-                    logger.info("Loss:{} ".format(loss))
+                    # logger.info("Loss:{} ".format(loss))
 
                     # We keep track of the loss at each epoch
                     total_loss = total_loss + loss.cpu().detach().float()
-
 
                 # Checks if the accelerator has performed an optimization step behind the scenes
                 if accelerator.sync_gradients:
@@ -1273,6 +1272,8 @@ def main():
 
                 if completed_steps >= args.max_train_steps:
                     break
+
+            logger.info("Epoch %d Loss:{} ".format(total_loss / len(train_dataloader)), epoch) 
 
             if args.checkpointing_steps == "epoch":
                 output_dir = f"epoch_{epoch}"
