@@ -46,7 +46,7 @@ for file_name in sorted(os.listdir(args.json_dir)):
                     lst_max_conf_per_mc.append(max(conf_per_mc))
                     #import pdb; pdb.set_trace()
             
-            mean_conf = np.mean(lst_max_conf_per_mc)
+            median_conf = np.median(lst_max_conf_per_mc)
             #import pdb; pdb.set_trace()
             
             for subject_data in json_subject_data:
@@ -62,7 +62,7 @@ for file_name in sorted(os.listdir(args.json_dir)):
                     conf_for_winner = tuple_conf_vote[0][mapper[tuple_conf_vote[1]]]
                     #import pdb; pdb.set_trace()
 
-                    if conf_for_winner >= mean_conf: #0.5:
+                    if conf_for_winner >= median_conf: #0.5:
                         filtered_cor = pred == label
                         subject_filtered_cors.append(filtered_cor)
 
@@ -78,7 +78,7 @@ for file_name in sorted(os.listdir(args.json_dir)):
             #import pdb; pdb.set_trace()
 
             logger.info("All Accuracy {:.4f} - {} - len: {}".format(subject_all_acc, subject, len(subject_all_cors)))
-            logger.info("Filtered Accuracy {:.4f} - {} - len: {} - mean: {}".format(subject_filtered_acc, subject, len(subject_filtered_cors), mean_conf))
+            logger.info("Filtered Accuracy {:.4f} - {} - len: {} - median: {}".format(subject_filtered_acc, subject, len(subject_filtered_cors), median_conf))
             logger.info("===========")
 
 

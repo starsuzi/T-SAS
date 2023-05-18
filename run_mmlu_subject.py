@@ -181,6 +181,8 @@ def parse_args():
     parser.add_argument('--subject_file_path', type=str, default=None)
     # soft label
     parser.add_argument("--do_soft_label", action="store_true")
+    # filtering
+    parser.add_argument("--do_filtering", action="store_true")
     #
     parser.add_argument('--without_multi_features', action="store_true")
     parser.add_argument("--ntrain", "-k", type=int, default=5)
@@ -388,8 +390,9 @@ def run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, dict_majority_ea
     logger.info("***** Running MC Drop *****")
 
     #model.eval()
-    lst_mc_preds = []
+    #lst_mc_preds = []
     lst_probs = []
+    lst_max_prob = []
     with torch.no_grad():
         for i in range(0, args.mc_drop_num):
             model.train()
@@ -423,29 +426,34 @@ def run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, dict_majority_ea
             logger.info(pred)
             logger.info(probs)
 
-            lst_mc_preds.append(pred)
+            #lst_mc_preds.append(pred)
             lst_probs.append(probs.tolist())
+            lst_max_prob.append({pred : max(probs.tolist())})
+            #import pdb; pdb.set_trace()
 
     
     dict_majority_each_example_vote['text'] = tokenizer.batch_decode(input_ids, skip_special_tokens=True)[0]
+    #dict_majority_each_example_vote['lst_mc_preds'] = lst_mc_preds
     dict_majority_each_example_vote['confidence'] = lst_probs
+    dict_majority_each_example_vote['pred_confidence']= lst_max_prob
     #import pdb; pdb.set_trace()
 
-    return lst_mc_preds
+    #return lst_mc_preds
 
 
 # Majority Voting
 def run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, args):
-    logger.info("***** Running Majority Vote *****")
+    
 
     mc_drop_num = args.mc_drop_num
-    batch_size = len(lst_mc_preds[0])
 
     # convert list into dictionary
+    # lst_mc_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence']]
+    #lst_filtered_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence'] if [*mc_preds.values()][0] > 0.5]
     dict_mc_freq_preds = Counter(lst_mc_preds)
     freq_pred = max(dict_mc_freq_preds, key=dict_mc_freq_preds.get)
 
-    logger.info('===================================')
+    # logger.info('===================================')
     logger.info('Votes : ')
     logger.info(dict_mc_freq_preds)
     logger.info('Max votes preds : ')
@@ -710,10 +718,12 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
             label = test_df.iloc[i, test_df.shape[1] - 1]
 
             # mc drop
-            lst_mc_preds = run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, dict_majority_each_example_vote, args)
+            run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, dict_majority_each_example_vote, args)
             #import pdb; pdb.set_trace()
 
             # majority vote
+            logger.info("***** Running Majority Vote *****")
+            lst_mc_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence']]
             pred_label, pred_soft_label = run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, args)
             lst_pred_label.append(pred_label)
             lst_pred_soft_label.append(pred_soft_label)
@@ -727,11 +737,44 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
             lst_majority_vote.append(dict_majority_each_example_vote)
             #import pdb; pdb.set_trace()
 
-        if not os.path.exists(args.output_dir+'/json/'):
-            os.makedirs(args.output_dir+'/json/')
-        with open(args.output_dir+'/json/'+subject+".json", "w") as outfile:
-            json.dump(lst_majority_vote, outfile, indent=4)
+        if args.do_filtering :
+            # filter out low confident preds
+            lst_pred_label = []
+            lst_pred_soft_label = []        
+            # median
+            lst_max_conf_per_mc = []
+            for data in lst_majority_vote:
+                for conf_per_mc in data['confidence']:
+                    lst_max_conf_per_mc.append(max(conf_per_mc))
+                    #import pdb; pdb.set_trace()
+            
+            median_conf = np.median(lst_max_conf_per_mc) # len: mc_drop_num * (examples in subject)
 
+
+            lst_skip_idx = []
+
+            for idx, dict_majority_each_example_vote in enumerate(lst_majority_vote):
+                # majority vote without low confidence
+                lst_filtered_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence'] if [*mc_preds.values()][0] > median_conf]            
+                if lst_filtered_preds  == []:
+                    lst_skip_idx.append(idx)
+                    continue
+
+                logger.info("***** Running MC Drop without low confidence *****")
+
+                filtered_pred_label, filtered_pred_soft_label = run_majority_vote(tokenizer, lst_filtered_preds, dict_majority_each_example_vote, args)
+                
+                logger.info('median_conf')
+                logger.info(median_conf)
+
+                lst_pred_label.append(filtered_pred_label)
+                lst_pred_soft_label.append(filtered_pred_soft_label)
+
+                logger.info('Gold Answer')
+                logger.info(dict_majority_each_example_vote['gold_answer'])
+
+            # filter out input_ids with low confidence
+            lst_input = [input_id for idx, input_id in enumerate(lst_input) if idx not in lst_skip_idx]
 
         # test_time_tuning
         test_time_tuning_examples['input_ids'] = lst_input
@@ -741,6 +784,8 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
         #import pdb; pdb.set_trace()
 
         test_time_tuning_examples = datasets.Dataset.from_dict(test_time_tuning_examples)
+
+        #import pdb; pdb.set_trace()
 
         test_time_tuning_dataset = test_time_tuning_examples.map(
                         preprocess_function,
@@ -765,7 +810,14 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
         #import pdb; pdb.set_trace()
 
         del test_time_tuning_dataloader
-        
+
+        # save
+        if not os.path.exists(args.output_dir+'/json/'):
+            os.makedirs(args.output_dir+'/json/')
+        with open(args.output_dir+'/json/'+subject+".json", "w") as outfile:
+            json.dump(lst_majority_vote, outfile, indent=4)
+
+
     # actual inference
     cors = []
     all_probs = []
