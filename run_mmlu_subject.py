@@ -389,6 +389,7 @@ def run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, dict_majority_ea
 
     #model.eval()
     lst_mc_preds = []
+    lst_probs = []
     with torch.no_grad():
         for i in range(0, args.mc_drop_num):
             model.train()
@@ -423,6 +424,12 @@ def run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, dict_majority_ea
             logger.info(probs)
 
             lst_mc_preds.append(pred)
+            lst_probs.append(probs.tolist())
+
+    
+    dict_majority_each_example_vote['text'] = tokenizer.batch_decode(input_ids, skip_special_tokens=True)[0]
+    dict_majority_each_example_vote['confidence'] = lst_probs
+    #import pdb; pdb.set_trace()
 
     return lst_mc_preds
 
@@ -453,6 +460,10 @@ def run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, 
 
     logger.info('Votes preds : ')
     logger.info(lst_soft_label)
+
+    #import pdb; pdb.set_trace()
+    dict_majority_each_example_vote['vote'] = lst_soft_label
+    dict_majority_each_example_vote['max_vote'] = freq_pred
 
     return freq_pred, lst_soft_label
 
@@ -710,6 +721,16 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
             logger.info('Gold Answer')
             logger.info(label)
             #import pdb; pdb.set_trace()
+
+            dict_majority_each_example_vote['gold_answer'] = label
+
+            lst_majority_vote.append(dict_majority_each_example_vote)
+            #import pdb; pdb.set_trace()
+
+        if not os.path.exists(args.output_dir+'/json/'):
+            os.makedirs(args.output_dir+'/json/')
+        with open(args.output_dir+'/json/'+subject+".json", "w") as outfile:
+            json.dump(lst_majority_vote, outfile, indent=4)
 
 
         # test_time_tuning
