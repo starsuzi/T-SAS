@@ -384,7 +384,7 @@ def parse_args():
 
 
 # MC-drop
-def run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, args):
+def run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, dict_majority_each_example_vote, args):
     logger.info("***** Running MC Drop *****")
 
     #model.eval()
@@ -428,7 +428,7 @@ def run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, args):
 
 
 # Majority Voting
-def run_majority_vote(tokenizer, lst_mc_preds, args):
+def run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, args):
     logger.info("***** Running Majority Vote *****")
 
     mc_drop_num = args.mc_drop_num
@@ -663,8 +663,15 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
 
         # rows with long prompt
         lst_long_row = []
+        # majority vote json
+        lst_majority_vote = []
 
         for i in range(test_df.shape[0]):
+            # majority vote for each example json
+            dict_majority_each_example_vote = {}
+            dict_majority_each_example_vote['example_id'] = i
+            dict_majority_each_example_vote['subject'] = args.subject.split("_test.csv")[0].split('/')[-1]
+
             # get prompt and make sure it fits
             k = args.ntrain
             prompt_end = format_example(test_df, i, include_answer=False)
@@ -692,11 +699,11 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
             label = test_df.iloc[i, test_df.shape[1] - 1]
 
             # mc drop
-            lst_mc_preds = run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, args)
+            lst_mc_preds = run_mc_drop(model, tokenizer, input_ids, decoder_input_ids, dict_majority_each_example_vote, args)
             #import pdb; pdb.set_trace()
 
             # majority vote
-            pred_label, pred_soft_label = run_majority_vote(tokenizer, lst_mc_preds, args)
+            pred_label, pred_soft_label = run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, args)
             lst_pred_label.append(pred_label)
             lst_pred_soft_label.append(pred_soft_label)
 
