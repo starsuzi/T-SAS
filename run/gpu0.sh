@@ -1,1 +1,2 @@
-bash /data/soyeong/prompt_test/run/noTrainer/peft/context/baseline/mmlu/run_mmlu_baseline.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/mmlu/base/subcategory/do_filtering/run_mmlu_hard.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/mmlu/base/subcategory/do_filtering/run_mmlu_soft.sh

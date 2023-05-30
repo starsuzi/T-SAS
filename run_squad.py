@@ -601,67 +601,9 @@ def main():
 
     # Padding side determines if we do (question|context) or (context|question).
     pad_on_right = tokenizer.padding_side == "right"
-
-    def preprocess_squad_batch(
-        examples,
-        question_column: str,
-        context_column: str,
-        answer_column: str,
-    ) -> Tuple[List[str], List[str]]:
-        questions = examples[question_column]
-        contexts = examples[context_column]
-        answers = examples[answer_column]
-
-        def generate_input(_question, _context):
-            return " ".join(["question:", _question.lstrip(), "context:", _context.lstrip()])
-
-        inputs = [generate_input(question, context) for question, context in zip(questions, contexts)]
-        #import pdb; pdb.set_trace()
-        targets = [answer["text"][0] if len(answer["text"]) > 0 else "" for answer in answers]
-        return inputs, targets
-
-    def preprocess_sciq_batch(
-        examples,
-        question_column: str,
-        context_column: str,
-        answer_column: str,
-    ) -> Tuple[List[str], List[str]]:
-        questions = examples[question_column]
-        contexts = examples[context_column]
-        answers = examples[answer_column]
-
-        def generate_input(_question, _context):
-            return " ".join(["question:", _question.lstrip(), "context:", _context.lstrip()])
-
-        inputs = [generate_input(question, context) for question, context in zip(questions, contexts)]
-        #import pdb; pdb.set_trace()
-        targets = answers
-        return inputs, targets
         
 
-    def preprocess_function(examples):
-        # TODO prompt 넣어줘야함
-        if args.dataset_name == 'sciq':
-            inputs, targets = preprocess_sciq_batch(examples, question_column, context_column, answer_column)
-        else:
-            inputs, targets = preprocess_squad_batch(examples, question_column, context_column, answer_column)
-
-        model_inputs = tokenizer(inputs, max_length=max_seq_length, padding=padding, truncation=True)
-        #import pdb; pdb.set_trace()
-        # Tokenize targets with text_target=...
-        labels = tokenizer(text_target=targets, max_length=max_answer_length, padding=padding, truncation=True)
-
-        # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
-        # padding in the loss.
-        if padding == "max_length" and args.ignore_pad_token_for_loss:
-            labels["input_ids"] = [
-                [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
-            ]
-
-        model_inputs["labels"] = labels["input_ids"]
-        return model_inputs
-
-    def prepare_validation_features(examples):
+    def preprocess_features_function(examples):
         # Some of the questions have lots of whitespace on the left, which is not useful and will make the
         # truncation of the context fail (the tokenized question will take a lots of space). So we remove that
         # left whitespace
@@ -669,7 +611,7 @@ def main():
         # ("Answer a question about this article:\n{context}\n{question}", "{answer}"),
         examples[question_column] =  ['Please answer a question about the following article. Question: {}\n Article: '.format(q.lstrip()) for q in examples[question_column]] #[q.lstrip() for q in examples[question_column]]
         #examples[question_column] =  ['Question: {}\n Context: '.format(q.lstrip()) for q in examples[question_column]] #[q.lstrip() for q in examples[question_column]]
-
+        #import pdb; pdb.set_trace()
         #examples[context_column] = ['context: ' + c.lstrip()  for c in examples[context_column]]
 
         # Tokenize our examples with truncation and maybe padding, but keep the overflows using a stride. This results
@@ -693,7 +635,7 @@ def main():
         else:
             targets = [answer["text"][0] if len(answer["text"]) > 0 else "" for answer in examples[answer_column]]
 
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         # Tokenize targets with the `text_target` keyword argument
         labels = tokenizer(text_target=targets, max_length=max_answer_length, padding=padding, truncation=True)
 
@@ -727,76 +669,6 @@ def main():
         #import pdb; pdb.set_trace()
         return model_inputs
 
-
-    # test tuning preprocessing
-    def preprocess_validation_function_without_multi_features(examples):
-        if args.dataset_name == 'sciq':
-            inputs, targets = preprocess_sciq_batch(examples, question_column, context_column, answer_column)
-        else:
-            inputs, targets = preprocess_squad_batch(examples, question_column, context_column, answer_column)
-
-
-        model_inputs = tokenizer(inputs, max_length=max_seq_length, padding=padding, truncation=True)
-        # Tokenize targets with text_target=...
-        labels = tokenizer(text_target=targets, max_length=max_answer_length, padding=padding, truncation=True)
-
-        # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
-        # padding in the loss.
-        if padding == "max_length" and args.ignore_pad_token_for_loss:
-            labels["input_ids"] = [
-                [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
-            ]
-
-        model_inputs["labels"] = labels["input_ids"]
-        return model_inputs
-
-    # Validation preprocessing
-    def preprocess_validation_function(examples):
-        if args.dataset_name == 'sciq':
-            inputs, targets = preprocess_sciq_batch(examples, question_column, context_column, answer_column)
-        else:
-            inputs, targets = preprocess_squad_batch(examples, question_column, context_column, answer_column)
-
-        model_inputs = tokenizer(
-            inputs,
-            max_length=max_seq_length,
-            padding=padding,
-            truncation=True,
-            return_overflowing_tokens=True,
-            return_offsets_mapping=True,
-        )
-        # Tokenize targets with the `text_target` keyword argument
-        labels = tokenizer(text_target=targets, max_length=max_answer_length, padding=padding, truncation=True)
-
-        # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
-        # padding in the loss.
-        if padding == "max_length" and args.ignore_pad_token_for_loss:
-            labels["input_ids"] = [
-                [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
-            ]
-
-        # Since one example might give us several features if it has a long context, we need a map from a feature to
-        # its corresponding example. This key gives us just that.
-        sample_mapping = model_inputs.pop("overflow_to_sample_mapping")
-
-        # For evaluation, we will need to convert our predictions to substrings of the context, so we keep the
-        # corresponding example_id and we will store the offset mappings.
-        model_inputs["example_id"] = []
-        # Augment the overflowing tokens to the labels
-        labels_out = []
-
-        #import pdb; pdb.set_trace()
-
-        for i in range(len(model_inputs["input_ids"])):
-            # One example can give several spans, this is the index of the example containing this span of text.
-            sample_index = sample_mapping[i]
-            #import pdb; pdb.set_trace()
-            model_inputs["example_id"].append(examples["id"][sample_index])
-            labels_out.append(labels["input_ids"][sample_index])
-
-        model_inputs["labels"] = labels_out
-        #import pdb; pdb.set_trace()
-        return model_inputs
         
     if args.do_train:
         if args.train_column not in raw_datasets:
@@ -806,11 +678,12 @@ def main():
         if args.max_train_samples is not None:
             # We will select sample from whole data if agument is specified
             train_dataset = train_dataset.select(range(args.max_train_samples))
-
+        #import pdb; pdb.set_trace()
         # Create train feature from dataset
         with accelerator.main_process_first():
             train_dataset = train_dataset.map(
-                preprocess_function,
+                # preprocess_function,
+                preprocess_features_function,
                 batched=True,
                 num_proc=args.preprocessing_num_workers,
                 remove_columns=column_names,
@@ -841,27 +714,16 @@ def main():
         eval_examples = eval_examples.select(range(args.max_eval_samples))
     # Validation Feature Creation
     with accelerator.main_process_first():
-
-        if args.without_multi_features:
-            eval_dataset = eval_examples.map(
-                preprocess_validation_function_without_multi_features,
-                batched=True,
-                num_proc=args.preprocessing_num_workers,
-                remove_columns=eval_examples.column_names,
-                load_from_cache_file=not args.overwrite_cache,
-                desc="Running tokenizer on eval dataset",
-            )
-        else:
-            eval_dataset = eval_examples.map(
-                prepare_validation_features,
-                #preprocess_validation_function,
-                batched=True,
-                num_proc=args.preprocessing_num_workers,
-                #remove_columns=column_names,
-                remove_columns=eval_examples.column_names,
-                load_from_cache_file=not args.overwrite_cache,
-                desc="Running tokenizer on validation dataset",
-            )
+        eval_dataset = eval_examples.map(
+            preprocess_features_function,
+            #preprocess_validation_function,
+            batched=True,
+            num_proc=args.preprocessing_num_workers,
+            #remove_columns=column_names,
+            remove_columns=eval_examples.column_names,
+            load_from_cache_file=not args.overwrite_cache,
+            desc="Running tokenizer on validation dataset",
+        )
 
     if args.max_eval_samples is not None:
         # During Feature creation dataset samples might increase, we will select required samples again
@@ -890,25 +752,15 @@ def main():
 
         # test_time_tuning Feature Creation
         with accelerator.main_process_first():
-            if args.without_multi_features:
-                test_time_tuning_dataset = test_time_tuning_examples.map(
-                    preprocess_validation_function_without_multi_features,
-                    batched=True,
-                    num_proc=args.preprocessing_num_workers,
-                    remove_columns=test_time_tuning_examples.column_names,
-                    load_from_cache_file=not args.overwrite_cache,
-                    desc="Running tokenizer on eval dataset",
-                )
-            else:
-                test_time_tuning_dataset = test_time_tuning_examples.map(
-                    prepare_validation_features,
-                    # preprocess_validation_function,
-                    batched=True,
-                    num_proc=args.preprocessing_num_workers,
-                    remove_columns=test_time_tuning_examples.column_names,
-                    load_from_cache_file=not args.overwrite_cache,
-                    desc="Running tokenizer on eval dataset",
-                )
+            test_time_tuning_dataset = test_time_tuning_examples.map(
+                preprocess_features_function,
+                # preprocess_validation_function,
+                batched=True,
+                num_proc=args.preprocessing_num_workers,
+                remove_columns=test_time_tuning_examples.column_names,
+                load_from_cache_file=not args.overwrite_cache,
+                desc="Running tokenizer on eval dataset",
+            )
         if args.max_test_time_tuning_samples is not None:
             # During Feature creation dataset samples might increase, we will select required samples again
             test_time_tuning_dataset = test_time_tuning_dataset.select(range(args.max_test_time_tuning_samples))
@@ -968,91 +820,26 @@ def main():
         else:
             references = [{"id": ex["id"] if type(ex["id"]) == str else str(ex["id"]), "answers": ex[answer_column] if ex[answer_column]['text'] != [] else {'text': [''], 'answer_start': []}} for ex in examples]
 
-        # # Format the result to the format the metric expects.
-        # if args.version_2_with_negative:
-        #     formatted_predictions = [
-        #         {"id": k, "prediction_text": v, "no_answer_probability": 0.0} for k, v in predictions.items()
-        #     ]
-        # else:
-        #     formatted_predictions = [{"id": k, "prediction_text": v} for k, v in predictions.items()]
-
-        # # references = [{"id": ex["id"], "answers": ex[answer_column]} for ex in examples]
-        # if args.dataset_name == 'sciq':
-        #     references = [{"id": ex["id"], "answers": {'text': [ex[answer_column]], 'answer_start': []}} for ex in examples]
-        # #elif args.dataset_name == 'covid_qa_deepset':
-
-
-        # else:
-        #     references = [{"id": ex["id"] if type(ex["id"]) == str else str(ex["id"]), "answers": ex[answer_column] if ex[answer_column]['text'] != [] else {'text': [''], 'answer_start': []}} for ex in examples]
-
-
-
-        #import pdb; pdb.set_trace()
-        return EvalPrediction(predictions=formatted_predictions, label_ids=references)
-
-
-
-    # Post-processing without_multi_features:
-    def post_processing_function_without_multi_features(
-        examples: datasets.Dataset, features: datasets.Dataset, outputs, stage="eval"
-    ):
-        # Decode the predicted tokens.
-        preds = outputs
-        if isinstance(preds, tuple):
-            preds = preds[0]
-        # Replace -100s used for padding as we can't decode them
-        preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
-        decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-
-        predictions = {}   
-        for example_index, example in enumerate(examples):
-            predictions[example["id"]] = decoded_preds[example_index]
-
-
-        # Format the result to the format the metric expects.
-        if args.version_2_with_negative:
-            formatted_predictions = [
-                {"id": k if type(k) == str else str(k), "prediction_text": v, "no_answer_probability": 0.0} for k, v in predictions.items()
-            ]
-        else:
-            formatted_predictions = [{"id": k if type(k) == str else str(k), "prediction_text": v} for k, v in predictions.items()]
-
-        if args.dataset_name == 'sciq':
-            references = [{"id": ex["id"], "answers": {'text': [ex[answer_column]], 'answer_start': []}} for ex in examples]
-        else:
-            references = [{"id": ex["id"] if type(ex["id"]) == str else str(ex["id"]), "answers": ex[answer_column] if ex[answer_column]['text'] != [] else {'text': [''], 'answer_start': []}} for ex in examples]
-
-        #import pdb; pdb.set_trace()
         return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
 
     if args.do_train:
+        train_dataset_for_model = train_dataset.remove_columns(["example_id", "offset_mapping"])
         train_dataloader = DataLoader(
-            train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
+            train_dataset_for_model, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
         )
 
-    if args.without_multi_features:
-        eval_dataset_for_model = eval_dataset
-        eval_dataloader = DataLoader(
-                eval_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
-            )
-    else:
-        eval_dataset_for_model = eval_dataset.remove_columns(["example_id", "offset_mapping"])        
-        eval_dataloader = DataLoader(
-            eval_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
-        )
 
-    if args.do_test_time_tuning:
-        if args.without_multi_features:
-            test_time_tuning_dataset_for_model = test_time_tuning_dataset
-            test_time_tuning_dataloader = DataLoader(
-                test_time_tuning_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
-            ) 
-        else:
-            test_time_tuning_dataset_for_model = test_time_tuning_dataset.remove_columns(["example_id", "offset_mapping"])        
-            test_time_tuning_dataloader = DataLoader(
-                test_time_tuning_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
-            )
+    eval_dataset_for_model = eval_dataset.remove_columns(["example_id", "offset_mapping"])        
+    eval_dataloader = DataLoader(
+        eval_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
+    )
+
+    if args.do_test_time_tuning:       
+        test_time_tuning_dataset_for_model = test_time_tuning_dataset.remove_columns(["example_id", "offset_mapping"])        
+        test_time_tuning_dataloader = DataLoader(
+            test_time_tuning_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
+        )
        
 
     # Optimizer
@@ -1092,7 +879,7 @@ def main():
         # Scheduler and math around the number of training steps.
         overrode_max_train_steps = False
 
-        num_update_steps_per_epoch = math.ceil(len(eval_dataloader) / args.gradient_accumulation_steps)
+        num_update_steps_per_epoch = math.ceil(len(test_time_tuning_dataloader) / args.gradient_accumulation_steps)
 
         if args.max_test_time_train_steps is None:
             args.max_test_time_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
@@ -1257,6 +1044,8 @@ def main():
 
                     # We keep track of the loss at each epoch
                     total_loss = total_loss + loss.cpu().detach().float()
+                #import pdb; pdb.set_trace()
+                logger.info(tokenizer.batch_decode(batch["input_ids"][:1], skip_special_tokens=True))
 
                 # Checks if the accelerator has performed an optimization step behind the scenes
                 if accelerator.sync_gradients:
@@ -1539,10 +1328,7 @@ def main():
 
         # delete the list of numpy arrays
         del all_gen_tokens
-        if args.without_multi_features:
-            prediction = post_processing_function_without_multi_features(eval_examples, eval_dataset, gen_tokens_concat)
-        else:
-            prediction = post_processing_function(eval_examples, eval_dataset, gen_tokens_concat)
+        prediction = post_processing_function(eval_examples, eval_dataset, gen_tokens_concat)
         #import pdb; pdb.set_trace()
         eval_metric = metric.compute(predictions=prediction.predictions, references=prediction.label_ids)
         logger.info(f"Evaluation metrics: {eval_metric}")

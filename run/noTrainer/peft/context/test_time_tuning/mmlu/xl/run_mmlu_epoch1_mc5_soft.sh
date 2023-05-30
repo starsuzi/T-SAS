@@ -12,7 +12,6 @@ mkdir -p ${OUTPUT_DIR}
 for subject in $SUBJECT_FILE_PATH/*
 do 
     CUDA_VISIBLE_DEVICES=1 python run_mmlu_subject.py \
-        --subject_file_path ${SUBJECT_FILE_PATH} \
         --subject ${subject} \
         --do_soft_label \
         --model_name_or_path ${MODEL} \

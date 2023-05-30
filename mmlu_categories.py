@@ -6,11 +6,11 @@ subcategories = {
     "clinical_knowledge": ["health"],
     "college_biology": ["biology"],
     "college_chemistry": ["chemistry"],
-    "college_computer_science": ["computer science"],
+    "college_computer_science": ["computer_science"],
     "college_mathematics": ["math"],
     "college_medicine": ["health"],
     "college_physics": ["physics"],
-    "computer_security": ["computer science"],
+    "computer_security": ["computer_science"],
     "conceptual_physics": ["physics"],
     "econometrics": ["economics"],
     "electrical_engineering": ["engineering"],
@@ -19,7 +19,7 @@ subcategories = {
     "global_facts": ["other"],
     "high_school_biology": ["biology"],
     "high_school_chemistry": ["chemistry"],
-    "high_school_computer_science": ["computer science"],
+    "high_school_computer_science": ["computer_science"],
     "high_school_european_history": ["history"],
     "high_school_geography": ["geography"],
     "high_school_government_and_politics": ["politics"],
@@ -36,7 +36,7 @@ subcategories = {
     "international_law": ["law"],
     "jurisprudence": ["law"],
     "logical_fallacies": ["philosophy"],
-    "machine_learning": ["computer science"],
+    "machine_learning": ["computer_science"],
     "management": ["business"],
     "marketing": ["business"],
     "medical_genetics": ["health"],
@@ -59,8 +59,8 @@ subcategories = {
 }
 
 categories = {
-    "STEM": ["physics", "chemistry", "biology", "computer science", "math", "engineering"],
+    "STEM": ["physics", "chemistry", "biology", "computer_science", "math", "engineering"],
     "humanities": ["history", "philosophy", "law"],
-    "social sciences": ["politics", "culture", "economics", "geography", "psychology"],
-    "other (business, health, misc.)": ["other", "business", "health"],
+    "social_sciences": ["politics", "culture", "economics", "geography", "psychology"],
+    "other_business_health": ["other", "business", "health"],
 }

@@ -7,7 +7,7 @@ EPOCH=2
 OUTPUT_DIR=./outputs/${DATASET_NAME}/context/train/model/${MODEL}/lora/epoch/${EPOCH}/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
-CUDA_VISIBLE_DEVICES=2 python run_squad.py \
+CUDA_VISIBLE_DEVICES=1 python run_squad.py \
     --model_name_or_path ${MODEL} \
     --dataset_name ${DATASET_NAME} \
     --question_column question \

@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 parser = argparse.ArgumentParser(description="Finetune a transformers model on a QA task")
 parser.add_argument("--output_dir", type=str, default=None, help="Where to store the final model.")
+
 args = parser.parse_args()
 
 # TODO
@@ -27,14 +28,12 @@ logging.basicConfig(
 subjects = sorted(
     [
         f.split(".pkl")[0]
-        for f in os.listdir(os.path.join(args.output_dir, "subject_results"))
+        for f in os.listdir(os.path.join(args.output_dir, 'subject_results'))
         if ".pkl" in f
     ]
 )
 
 
-# with open(os.path.join(args.output_dir, "subject_results", "{}.pkl".format(subject)), 'wb') as f:
-#     pickle.dump(dict_subject_output, f)
 
 all_cors = []
 subcat_cors = {
@@ -44,7 +43,7 @@ cat_cors = {cat: [] for cat in categories}
 
 logger.info('===============')
 for subject in subjects:
-    with open(os.path.join(args.output_dir, "subject_results", "{}.pkl".format(subject)), 'rb') as f:
+    with open(os.path.join(args.output_dir, 'subject_results', "{}.pkl".format(subject)), 'rb') as f:
         dict_subject_output = pickle.load(f)
 
         # assert
@@ -69,7 +68,7 @@ for subcat in subcat_cors:
         logger.info("Average accuracy {:.4f} - {}".format(subcat_acc, subcat))
 
 for cat in cat_cors:
-    if subcat_cors[subcat] != []:
+    if cat_cors[cat] != []:
         cat_acc = np.mean(np.concatenate(cat_cors[cat]))
         print("Average accuracy {:.4f} - {}".format(cat_acc, cat))
         logger.info("Average accuracy {:.4f} - {}".format(cat_acc, cat))

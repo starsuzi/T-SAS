@@ -14,7 +14,7 @@ mapper = {
 }
 
 parser = argparse.ArgumentParser(description="Finetune a transformers model on a QA task")
-parser.add_argument("--json_dir", type=str, default='/data/syjeong/prompt_test/outputs/mmlu/context/confidence/model/google/flan-t5-xl/lora/mc/5/2023_05_18/19_21_47/json', help="Where to store the final model.")
+parser.add_argument("--json_dir", type=str, default='/data/syjeong/prompt_test/outputs/mmlu/context/confidence/model/google/flan-t5-xl/lora/mc/15/2023_05_19/02_58_41/json', help="Where to store the final model.")
 args = parser.parse_args()
 
 # Setup logging
@@ -83,8 +83,8 @@ for file_name in sorted(os.listdir(args.json_dir)):
 
 
 logger.info("******************")
-logger.info("All Accuracy {:.4f} - Total".format(np.mean(total_all_cors)))
-logger.info("Filtered Accuracy {:.4f} - Total".format(np.mean(total_filtered_cors)))
+logger.info("All Accuracy {:.4f} - Total - len: {}".format(np.mean(total_all_cors), len(total_all_cors)))
+logger.info("Filtered Accuracy {:.4f} - Total - len: {}".format(np.mean(total_filtered_cors), len(total_filtered_cors)))
 logger.info("******************")
 
 

@@ -18,6 +18,7 @@ CUDA_VISIBLE_DEVICES=2 python run_squad.py \
     --output_dir ${OUTPUT_DIR} \
     --overwrite_cache \
     --val_column 'validation' \
+    --do_eval
 
     #--num_beams 1 \
     # --max_train_samples 5 \
