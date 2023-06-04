@@ -4,10 +4,10 @@ DATASET_NAME=squad
 
 EPOCH=2
 
-OUTPUT_DIR=./outputs/${DATASET_NAME}/context/train/model/${MODEL}/orig_prompt/lora/epoch/${EPOCH}/${DATE}
+OUTPUT_DIR=./outputs/${DATASET_NAME}/context/train/reproduce/model/${MODEL}/lora/epoch/${EPOCH}/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
-CUDA_VISIBLE_DEVICES=5 python run_squad.py \
+CUDA_VISIBLE_DEVICES=4 python run_squad.py \
     --model_name_or_path ${MODEL} \
     --dataset_name ${DATASET_NAME} \
     --question_column question \
@@ -31,3 +31,5 @@ CUDA_VISIBLE_DEVICES=5 python run_squad.py \
     # --max_train_samples 5 \
     # --max_eval_samples 5 \
     # --max_test_time_tuning_samples 5
+
+CUDA_VISIBLE_DEVICES=4 bash /data/syjeong/prompt_test/run/run.sh

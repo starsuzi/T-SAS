@@ -1,16 +1,16 @@
 DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
-MODEL=google/flan-t5-small
+MODEL=google/flan-t5-xl
 DATASET_NAME=squad
 
 
-for MC_DROP_NUM in 1
+for MC_DROP_NUM in 10 # 10 20
 do
-    for EPOCH in 1
+    for EPOCH in 1 # 5 10
     do
-        OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
+        OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/reproduce/model/${MODEL}/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
         mkdir -p ${OUTPUT_DIR}
 
-        CUDA_VISIBLE_DEVICES=6 python run_squad.py \
+        CUDA_VISIBLE_DEVICES=5 python run_squad.py \
             --model_name_or_path ${MODEL} \
             --dataset_name ${DATASET_NAME} \
             --question_column question \
@@ -27,10 +27,7 @@ do
             --do_eval \
             --do_test_time_tuning \
             --mc_drop_num ${MC_DROP_NUM} \
-            --test_time_tuning_epoch ${EPOCH} \
-            --max_test_time_tuning_samples 100 \
-            --max_eval_samples 100
-
+            --test_time_tuning_epoch ${EPOCH}
     done
 done
 

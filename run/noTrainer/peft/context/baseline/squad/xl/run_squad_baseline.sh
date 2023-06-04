@@ -2,11 +2,11 @@ DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-xl
 DATASET_NAME=squad
 
-OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/${DATE}
+OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/orig_prompt/${MODEL}/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
 
-CUDA_VISIBLE_DEVICES=2 python run_squad.py \
+CUDA_VISIBLE_DEVICES=7 python run_squad.py \
     --model_name_or_path ${MODEL} \
     --dataset_name ${DATASET_NAME} \
     --question_column question \

@@ -476,7 +476,7 @@ def run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, 
     return freq_pred, lst_soft_label
 
 
-def test_time_tuning(model, optimizer,lr_scheduler, tokenizer, test_time_tuning_dataloader, accelerator, args):
+def test_time_tuning(model, optimizer, lr_scheduler, tokenizer, test_time_tuning_dataloader, accelerator, args):
 
     logger.info("***** Running Test-time tuning *****")
 
@@ -638,7 +638,7 @@ def gen_prompt(train_df, subject, k=-1):
     return prompt
 
 
-def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_df, accelerator):
+def eval(args, subject, model, tokenizer, dev_df, test_df, accelerator):
 
     label_pad_token_id = -100 if args.ignore_pad_token_for_loss else tokenizer.pad_token_id
     data_collator = DataCollatorForSeq2Seq(
@@ -804,8 +804,40 @@ def eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_
         del test_time_tuning_dataset
         del test_time_tuning_examples
 
+
+        # Optimizer
+        # Split weights in two groups, one with weight decay and the other not.
+        no_decay = ["bias", "LayerNorm.weight", "layer_norm.weight"]
+        optimizer_grouped_parameters = [
+            {
+                "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+                "weight_decay": args.weight_decay,
+            },
+            {
+                "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+                "weight_decay": 0.0,
+            },
+        ]
+        optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
+
+        # Scheduler and math around the number of training steps.
+        overrode_max_train_steps = False
+        num_update_steps_per_epoch = math.ceil(len(test_time_tuning_dataloader) / args.gradient_accumulation_steps)
+        if args.max_train_steps is None:
+            args.max_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
+            overrode_max_train_steps = True
+
+        lr_scheduler = get_scheduler(
+            name=args.lr_scheduler_type,
+            optimizer=optimizer,
+            num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
+            num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
+        )
+
+
+
         #import pdb; pdb.set_trace()
-        test_time_tuning_dataloader = accelerator.prepare(test_time_tuning_dataloader)
+        test_time_tuning_dataloader, lr_scheduler = accelerator.prepare(test_time_tuning_dataloader, lr_scheduler)
         test_time_tuning(model, optimizer, lr_scheduler, tokenizer, test_time_tuning_dataloader, accelerator, args)
         #import pdb; pdb.set_trace()
 
@@ -954,36 +986,36 @@ def load_model(args, test_df):
     # if model.config.decoder_start_token_id is None:
     #     raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
 
-    # Optimizer
-    # Split weights in two groups, one with weight decay and the other not.
-    no_decay = ["bias", "LayerNorm.weight", "layer_norm.weight"]
-    optimizer_grouped_parameters = [
-        {
-            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-            "weight_decay": args.weight_decay,
-        },
-        {
-            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-            "weight_decay": 0.0,
-        },
-    ]
-    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
+    # # Optimizer
+    # # Split weights in two groups, one with weight decay and the other not.
+    # no_decay = ["bias", "LayerNorm.weight", "layer_norm.weight"]
+    # optimizer_grouped_parameters = [
+    #     {
+    #         "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+    #         "weight_decay": args.weight_decay,
+    #     },
+    #     {
+    #         "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+    #         "weight_decay": 0.0,
+    #     },
+    # ]
+    # optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
 
-    # Scheduler and math around the number of training steps.
-    overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(len(test_df) / args.gradient_accumulation_steps)
-    if args.max_train_steps is None:
-        args.max_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
-        overrode_max_train_steps = True
+    # # Scheduler and math around the number of training steps.
+    # overrode_max_train_steps = False
+    # num_update_steps_per_epoch = math.ceil(len(test_df) / args.gradient_accumulation_steps)
+    # if args.max_train_steps is None:
+    #     args.max_train_steps = args.test_time_tuning_epoch * num_update_steps_per_epoch
+    #     overrode_max_train_steps = True
 
-    lr_scheduler = get_scheduler(
-        name=args.lr_scheduler_type,
-        optimizer=optimizer,
-        num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
-        num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
-    )
+    # lr_scheduler = get_scheduler(
+    #     name=args.lr_scheduler_type,
+    #     optimizer=optimizer,
+    #     num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
+    #     num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
+    # )
 
-    return model, tokenizer, optimizer, lr_scheduler
+    return model, tokenizer #, optimizer, lr_scheduler
 
 
 def main():
@@ -1101,15 +1133,15 @@ def main():
     )
 
     # Load model for each_subject
-    model, tokenizer, optimizer, lr_scheduler = load_model(args, test_df)
+    model, tokenizer = load_model(args, test_df)
 
     # Prepare everything with our `accelerator`.
-    model, optimizer, dev_df, test_df, lr_scheduler = accelerator.prepare(
-                model, optimizer, dev_df, test_df, lr_scheduler
+    model, dev_df, test_df = accelerator.prepare(
+                model, dev_df, test_df
             )
 
     # Evaluate model (test-time tuning)
-    cors, acc, probs, test_df = eval(args, subject, model, optimizer, lr_scheduler, tokenizer, dev_df, test_df, accelerator)
+    cors, acc, probs, test_df = eval(args, subject, model, tokenizer, dev_df, test_df, accelerator)
 
     #import pdb; pdb.set_trace()
 
