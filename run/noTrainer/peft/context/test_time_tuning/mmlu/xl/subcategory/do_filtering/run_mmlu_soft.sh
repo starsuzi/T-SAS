@@ -4,11 +4,11 @@ DATASET_NAME=data/mmlu
 DATASET_NAME_FILENAME=mmlu
 
 
-for MC_DROP_NUM in 5 #10 15 # 5 15 25
+for MC_DROP_NUM in 5 7 10 #10 15 # 5 15 25
 do
-    for EPOCH in 2 #3 5 #5 10 # 5 10 20
+    for EPOCH in 2 3 4 5 #3 5 #5 10 # 5 10 20
     do
-        OUTPUT_DIR=./outputs/${DATASET_NAME_FILENAME}/context/test_time_tuning/model/${MODEL}/subcategory/do_filtering/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/soft_label/${DATE}
+        OUTPUT_DIR=./outputs/${DATASET_NAME_FILENAME}/test_time_tuning/model/${MODEL}/subcategory/do_filtering/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/soft_label/${DATE}
         mkdir -p ${OUTPUT_DIR}
 
         for subcategory in physics chemistry biology computer_science math engineering history philosophy law politics culture economics geography psychology other business health

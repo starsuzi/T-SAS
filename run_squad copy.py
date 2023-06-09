@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 import copy
 #from utils_qa import *
+import pickle
 
 import datasets
 import evaluate
@@ -911,6 +912,7 @@ def main():
         max_seq_len = len(arr_mc_generated_tokens[0][0])
 
         arr_max_vote_pred = np.full((batch_size, max_seq_len), -100)
+        arr_num_max_vote_pred = np.full((batch_size, 1), -100)
 
         for i in range(batch_size):
             ith_batch_votes = arr_mc_generated_tokens[:, i, :]
@@ -930,9 +932,16 @@ def main():
             # find max pred
             max_vote_pred = max(votes_table, key=votes_table.get)
             arr_max_vote_pred[i] = max_vote_pred
+            # find max pred's vote
+            num_max_vote_pred = votes_table[max_vote_pred]
+            arr_num_max_vote_pred[i] = num_max_vote_pred
 
         #import pdb; pdb.set_trace()
         pred_label = torch.tensor(arr_max_vote_pred).to(device)
+        num_vote_pred_label = torch.tensor(arr_num_max_vote_pred).to(device)
+        
+        # probability 
+        num_vote_pred_label = num_vote_pred_label / args.mc_drop_num
 
         if args.ignore_pad_token_for_loss:
             arr_max_vote_pred = np.where(arr_max_vote_pred != -100, arr_max_vote_pred, tokenizer.pad_token_id)
@@ -940,8 +949,13 @@ def main():
         logger.info('===================================')
         logger.info('Max votes preds : ')
         logger.info(tokenizer.batch_decode(arr_max_vote_pred, skip_special_tokens=True))
+        logger.info('Max votes num: ')
+        logger.info( arr_num_max_vote_pred.tolist())
+        logger.info('Max votes num / args.mc_drop_num: ')
+        logger.info( num_vote_pred_label.tolist())
+        
 
-        return pred_label
+        return pred_label, num_vote_pred_label
 
 
     def test_time_tuning_soft(args, model, tokenizer, test_time_tuning_dataloader, lst_batch_with_pred_labels):
@@ -1008,12 +1022,15 @@ def main():
             total_loss = 0
             for step, batch in enumerate(lst_batch_with_pred_labels):
                 batch['decoder_input_ids'] = None
+                for sample in batch:
+                    if sample['proportion_best_pred_labels'] > 0.1:
+                        
+                        import pdb; pdb.set_trace()
                 
                 with accelerator.accumulate(model):
-                    outputs = model(**batch)
+                    # outputs = model(**batch)
+                    outputs = model(**{key: value for (key, value) in batch.items() if key in ['input_ids', 'labels', 'attention_mask', 'decoder_input_ids']})
                     loss = outputs.loss
-                    # if args.do_soft_label:
-                    #     loss = loss / args.mc_drop_num
                     accelerator.backward(loss)
                     optimizer.step()
                     lr_scheduler_test_time_tuning.step()
@@ -1065,36 +1082,54 @@ def main():
         if args.do_test_time_tuning:
             lst_batch_with_best_pred_labels = []
             lst_batch_with_all_pred_labels = []
+            lst_all_gold_labels = []
+
             for step, batch in enumerate(test_time_tuning_dataloader):
+                gold_labels = batch['labels'].cpu()
+                # output
+                lst_all_gold_labels.append([gold_labels] * args.mc_drop_num)
                 # mc drop
                 lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
 
                 # make array with MC drop results
                 # (mc_drop_num, batch size, seq_len)
                 arr_mc_generated_tokens = convert_to_arr(lst_mc_generated_tokens, args)
+                #import pdb; pdb.set_trace()
 
-                # soft_label batches
-                if args.do_soft_label:
-                    lst_mc_preds_batch = []
-                    for arr_mc_generated_token in arr_mc_generated_tokens:
+                # prepare soft_label batches
+                lst_mc_preds_batch = []
+                for arr_mc_generated_token in arr_mc_generated_tokens:
+                    if args.do_soft_label:
                         all_pred_label = torch.tensor(arr_mc_generated_token).to(device)
-                        lst_mc_preds_batch.append(all_pred_label)
-                        
-                    lst_batch_with_all_pred_labels.append(lst_mc_preds_batch)
+                    else:
+                        all_pred_label = torch.tensor(arr_mc_generated_token)
+                    lst_mc_preds_batch.append(all_pred_label)
+                    
+                lst_batch_with_all_pred_labels.append(lst_mc_preds_batch)
+                # import pdb; pdb.set_trace()
 
-                # hard batches
-                else:
-                    # majority vote for the best pred
-                    best_pred_label = run_majority_vote(tokenizer, arr_mc_generated_tokens, args)
+                # majority vote for the best pred & its vote num
+                best_pred_label, proportion_best_pred_label = run_majority_vote(tokenizer, arr_mc_generated_tokens, args)
+                #import pdb; pdb.set_trace()
 
-                    # update batch labels to the best predicted labels
-                    best_pred_batch = copy.deepcopy(batch)
-                    best_pred_batch['labels'] = best_pred_label
-                    lst_batch_with_best_pred_labels.append(best_pred_batch)
-
+                # update batch labels to the best predicted labels
+                best_pred_batch = copy.deepcopy(batch)
+                best_pred_batch['labels'] = best_pred_label
+                best_pred_batch['proportion_best_pred_labels'] = proportion_best_pred_label
+                lst_batch_with_best_pred_labels.append(best_pred_batch)
                             
             # prepare max_train_steps, train_epoch, lr_scheduler
             args.max_test_time_train_steps, args.test_time_tuning_epoch, lr_scheduler_test_time_tuning = prepare_scheduler(args, accelerator, test_time_tuning_dataloader, optimizer, args.max_test_time_train_steps, args.test_time_tuning_epoch)
+
+            #import pdb; pdb.set_trace()
+            # save pickle
+            with open(os.path.join(args.output_dir, "lst_batch_with_all_pred_labels.pickle"), 'wb') as out_pkl_file:
+                pickle.dump(lst_batch_with_all_pred_labels, out_pkl_file)
+            with open(os.path.join(args.output_dir, "gold_labels.pickle"), 'wb') as out_pkl_file:
+                pickle.dump(lst_all_gold_labels, out_pkl_file)
+            # with open(os.path.join(args.output_dir, "lst_batch_with_best_pred_labels.pickle"), 'wb') as out_pkl_file:
+            #     pickle.dump(lst_batch_with_best_pred_labels, out_pkl_file)
+
 
             # test_time_tuning
             # soft label
@@ -1104,6 +1139,7 @@ def main():
                 del lst_batch_with_all_pred_labels
             # hard label
             else:
+                # TODO 나중에 test_time_tuning_dataloader로 고치기..
                 test_time_tuning(args, model, tokenizer, lst_batch_with_best_pred_labels)
                 del lst_batch_with_best_pred_labels
 

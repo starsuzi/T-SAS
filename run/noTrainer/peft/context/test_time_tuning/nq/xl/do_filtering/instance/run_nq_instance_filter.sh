@@ -1,33 +1,34 @@
 DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
-MODEL=google/flan-t5-xl
-DATASET_NAME=sciq
+MODEL=google/flan-t5-small
+DATASET_NAME=nq
 
-
-for MC_DROP_NUM in 5 7 10
+for MC_DROP_NUM in 3 # 5 7 10 15
 do
-    for EPOCH in 2 5 7
+    for EPOCH in 1 #2 3 5
     do
-        OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/orig_prompt/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
+        OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/do_filtering/instance/orig_prompt/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
         mkdir -p ${OUTPUT_DIR}
 
         CUDA_VISIBLE_DEVICES=5 python run_squad.py \
             --model_name_or_path ${MODEL} \
-            --dataset_name ${DATASET_NAME} \
+            --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \
             --question_column question \
-            --answer_column correct_answer \
-            --context_column support \
+            --answer_column answers \
+            --context_column context \
             --learning_rate 3e-5 \
             --max_seq_length 384 \
             --doc_stride 128 \
-            --per_device_eval_batch_size 12 \
+            --per_device_eval_batch_size 2 \
             --output_dir ${OUTPUT_DIR} \
             --overwrite_cache \
             --train_peft_model \
-            --val_column 'test' \
+            --val_column 'validation' \
             --do_eval \
             --do_test_time_tuning \
             --mc_drop_num ${MC_DROP_NUM} \
-            --test_time_tuning_epoch ${EPOCH}
+            --test_time_tuning_epoch ${EPOCH} \
+            --max_eval_samples 50 \
+            --max_test_time_tuning_samples 50
     done
 done
 

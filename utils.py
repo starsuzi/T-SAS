@@ -292,3 +292,79 @@ def prepare_scheduler(args, accelerator, dataloader, optimizer, max_train_steps,
     train_epoch = math.ceil(max_train_steps / num_update_steps_per_epoch)
 
     return max_train_steps, train_epoch, lr_scheduler
+
+# these functions are heavily influenced by the HF squad_metrics.py script
+def normalize_text(s):
+    """Removing articles and punctuation, and standardizing whitespace are all typical text processing steps."""
+    import string, re
+
+    def remove_articles(text):
+        regex = re.compile(r"\b(a|an|the)\b", re.UNICODE)
+        return re.sub(regex, " ", text)
+
+    def white_space_fix(text):
+        return " ".join(text.split())
+
+    def remove_punc(text):
+        exclude = set(string.punctuation)
+        return "".join(ch for ch in text if ch not in exclude)
+
+    def lower(text):
+        return text.lower()
+
+    return white_space_fix(remove_articles(remove_punc(lower(s))))
+
+def compute_exact_match(prediction, truth):
+    return int(normalize_text(prediction) == normalize_text(truth))
+
+def compute_f1(prediction, truth):
+    pred_tokens = normalize_text(prediction).split()
+    truth_tokens = normalize_text(truth).split()
+    
+    # if either the prediction or the truth is no-answer then f1 = 1 if they agree, 0 otherwise
+    if len(pred_tokens) == 0 or len(truth_tokens) == 0:
+        return int(pred_tokens == truth_tokens)
+    
+    common_tokens = set(pred_tokens) & set(truth_tokens)
+    
+    # if there are no common tokens then f1 = 0
+    if len(common_tokens) == 0:
+        return 0
+    
+    prec = len(common_tokens) / len(pred_tokens)
+    rec = len(common_tokens) / len(truth_tokens)
+    
+    return 2 * (prec * rec) / (prec + rec)
+
+def get_gold_answers(example):
+    """helper function that retrieves all possible true answers from a squad2.0 example"""
+    
+    gold_answers = [answer["text"] for answer in example.answers if answer["text"]]
+
+    # if gold_answers doesn't exist it's because this is a negative example - 
+    # the only correct answer is an empty string
+    if not gold_answers:
+        gold_answers = [""]
+        
+    return gold_answers
+
+def calculate_f1_em(prediction_label_ids, prediction_predictions):
+    # report f1 and em
+    total_f1_score = 0
+    total_em_score = 0
+    for (gold_ans, pred) in zip(prediction_label_ids, prediction_predictions):
+        gold_answers = gold_ans['answers']['text']
+        prediction = pred['prediction_text']
+        # if len(gold_answers) > 1:
+        #     import pdb; pdb.set_trace()
+
+        f1_score = max((compute_f1(prediction, answer)) for answer in gold_answers)
+        em_score = max((compute_exact_match(prediction, answer)) for answer in gold_answers)
+
+        total_f1_score = total_f1_score + f1_score
+        total_em_score = total_em_score + em_score
+
+    final_em_score = (total_em_score / len(prediction_label_ids)) * 100
+    final_f1_score = (total_f1_score / len(prediction_label_ids)) * 100
+
+    return final_em_score, final_f1_score

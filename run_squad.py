@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 import copy
 #from utils_qa import *
+import pickle
 
 import datasets
 import evaluate
@@ -61,6 +62,8 @@ from transformers.trainer_utils import EvalLoopOutput, EvalPrediction, get_last_
 # TODO: peft
 from peft import get_peft_config, get_peft_model, get_peft_model_state_dict, LoraConfig, TaskType
 from peft import PeftModel, PeftConfig
+
+from torch.nn import CrossEntropyLoss
 
 from utils import *
 
@@ -166,6 +169,8 @@ def parse_args():
     parser.add_argument("--mc_drop_num", type=int)
     parser.add_argument('--test_time_tuning_epoch', type=int, default=2)
     parser.add_argument('--max_test_time_tuning_samples', type=int, default=None)
+    # soft label
+    parser.add_argument("--do_soft_label", action="store_true")
     #
     parser.add_argument('--without_multi_features', action="store_true")
     parser.add_argument(
@@ -453,7 +458,9 @@ def main():
         if args.validation_file is not None:
             data_files["validation"] = args.validation_file
         extension = args.validation_file.split(".")[-1]
+        #import pdb; pdb.set_trace()
         raw_datasets = load_dataset(extension, data_files=data_files)
+        
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
@@ -467,18 +474,30 @@ def main():
             raise ValueError("--do_train requires a train dataset")
         train_dataset = raw_datasets[args.train_column]
 
+        # TODO if there's no 'id' column
+        if args.dataset_name == 'sciq':
+            # TODO make 'id'
+            lst_id = [str(i) for i in range(len(train_dataset['question']))]
+            max_id_length = len(lst_id[-1])
+            lst_str_id = [('_')*(max_id_length-len(i))+i for i in lst_id]
+
+            train_dataset = train_dataset.add_column('id', lst_str_id)
+            #import pdb; pdb.set_trace()
+
         if args.max_train_samples is not None:
             # We will select sample from whole data if agument is specified
             train_dataset = train_dataset.select(range(args.max_train_samples))
+
+
         # Create train feature from dataset
         with accelerator.main_process_first():
-            column_names = raw_datasets["train"].column_names
+            # column_names = raw_datasets["train"].column_names
             train_dataset = train_dataset.map(
                 preprocess_features_function, 
                 fn_kwargs={'args':args, 'raw_datasets':raw_datasets, 'tokenizer': tokenizer},
                 batched=True,
                 num_proc=args.preprocessing_num_workers,
-                remove_columns=column_names,
+                remove_columns=train_dataset.column_names,
                 load_from_cache_file=not args.overwrite_cache,
                 desc="Running tokenizer on train dataset",
             )
@@ -792,23 +811,53 @@ def main():
             for i in range(0, args.mc_drop_num):
                 model.train()
 
-                generated_tokens = accelerator.unwrap_model(model).generate(
+                outputs = accelerator.unwrap_model(model).generate(
                     input_ids=batch["input_ids"],
                     attention_mask=batch["attention_mask"],
                     **gen_kwargs,
+                    return_dict_in_generate=True,
+                    output_scores=True
+                )
+                # import pdb; pdb.set_trace()
+                # calculate prob
+                transition_scores = model.compute_transition_scores(
+                    outputs.sequences, outputs.scores, normalize_logits=True
                 )
 
+                transition_scores = accelerator.gather_for_metrics(transition_scores)
+                transition_scores = transition_scores.cpu()
+
+                output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
+                probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
+
+                # generated_tokens
+                generated_tokens = outputs.sequences
                 generated_tokens = accelerator.gather_for_metrics(generated_tokens)
                 generated_tokens = generated_tokens.cpu().numpy()
-                # delete bos token
-                generated_tokens = generated_tokens[:, 1:] 
 
+                # input_length is the length of the input prompt for decoder-only models, like the GPT family, and 1 for
+                # encoder-decoder models, like BART or T5.
+                # delete bos token
+                # generated_tokens = generated_tokens[:, 1:] 
+                input_length = 1 if model.config.is_encoder_decoder else inputs.input_ids.shape[1]
+                generated_tokens = generated_tokens[:, input_length:]
+
+                # gold labels
+                gold_labels = batch['labels']
+                gold_labels = gold_labels.cpu().numpy()
+
+                if args.ignore_pad_token_for_loss:
+                    # Replace -100 in the labels as we can't decode them.
+                    gold_labels = np.where(gold_labels != -100, gold_labels, tokenizer.pad_token_id)
+                
                 logger.info('==========================================')
                 logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
                 logger.info('Prediction : ')
                 logger.info(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
-                # logger.info('Answer : ')
-                # logger.info(tokenizer.batch_decode(labels, skip_special_tokens=True))
+                logger.info('Probabilities : ')
+                logger.info(probabilities)
+                logger.info('Answer : ')
+                logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
 
                 # delete tokenizer.pad_token_id
                 generated_tokens = np.array([[(t if t != tokenizer.pad_token_id else -100) for t in tok] for tok in generated_tokens])
@@ -820,10 +869,8 @@ def main():
 
         return lst_generated_tokens
 
-    # Majority Voting
-    def run_majority_vote(tokenizer, lst_mc_generated_tokens, args):
-        logger.info("***** Running Majority Vote *****")
-
+    #
+    def convert_to_arr(lst_mc_generated_tokens, args):
         mc_drop_num = args.mc_drop_num
         batch_size = len(lst_mc_generated_tokens[0])
 
@@ -851,9 +898,21 @@ def main():
                 #import pdb; pdb.set_trace()
         
         # tokenizer.batch_decode(lst_mc_generated_tokens[0])
-        # TODO: lst_mc_generated_tokens padding 필요..
         arr_mc_generated_tokens = np.array(lst_pad_mc_generated_tokens) # (mc_drop_num, batch size, seq_len)
+        # import pdb; pdb.set_trace()
+        return arr_mc_generated_tokens
+
+
+    # Majority Voting
+    def run_majority_vote(tokenizer, arr_mc_generated_tokens, args):
+        logger.info("***** Running Majority Vote *****")
+
+        mc_drop_num = args.mc_drop_num
+        batch_size = len(arr_mc_generated_tokens[0])
+        max_seq_len = len(arr_mc_generated_tokens[0][0])
+
         arr_max_vote_pred = np.full((batch_size, max_seq_len), -100)
+        arr_num_max_vote_pred = np.full((batch_size, 1), -100)
 
         for i in range(batch_size):
             ith_batch_votes = arr_mc_generated_tokens[:, i, :]
@@ -873,9 +932,16 @@ def main():
             # find max pred
             max_vote_pred = max(votes_table, key=votes_table.get)
             arr_max_vote_pred[i] = max_vote_pred
+            # find max pred's vote
+            num_max_vote_pred = votes_table[max_vote_pred]
+            arr_num_max_vote_pred[i] = num_max_vote_pred
 
         #import pdb; pdb.set_trace()
         pred_label = torch.tensor(arr_max_vote_pred).to(device)
+        num_vote_pred_label = torch.tensor(arr_num_max_vote_pred).to(device)
+        
+        # probability 
+        num_vote_pred_label = num_vote_pred_label / args.mc_drop_num
 
         if args.ignore_pad_token_for_loss:
             arr_max_vote_pred = np.where(arr_max_vote_pred != -100, arr_max_vote_pred, tokenizer.pad_token_id)
@@ -883,11 +949,70 @@ def main():
         logger.info('===================================')
         logger.info('Max votes preds : ')
         logger.info(tokenizer.batch_decode(arr_max_vote_pred, skip_special_tokens=True))
+        logger.info('Max votes num: ')
+        logger.info( arr_num_max_vote_pred.tolist())
+        logger.info('Max votes num / args.mc_drop_num: ')
+        logger.info( num_vote_pred_label.tolist())
+        
 
-        return pred_label
+        return pred_label, num_vote_pred_label
 
 
-    def test_time_tuning(model, tokenizer, lst_batch_with_pred_labels, args):
+    def test_time_tuning_soft(args, model, tokenizer, test_time_tuning_dataloader, lst_batch_with_pred_labels):
+
+        logger.info("***** Running Test-time tuning *****")
+
+
+        for epoch in range(0, args.test_time_tuning_epoch):
+            model.train()
+            total_loss = 0
+            for step, batch in enumerate(test_time_tuning_dataloader):
+                batch['decoder_input_ids'] = None
+                batch['labels'] = lst_batch_with_pred_labels[step][0] # dummy labels for matching shape
+                with accelerator.accumulate(model):
+                    outputs = model(**batch)
+                    lm_logits = outputs.logits  # SHAPE: (BATCH, MAX_SEQ_LENGTH, VOCAB SIZE)
+                    loss_fct = CrossEntropyLoss(ignore_index=-100)
+                    all_pred_loss = 0
+                    for pred_labels in lst_batch_with_pred_labels[step]:
+                        each_pred_loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), pred_labels.view(-1))
+                        all_pred_loss = all_pred_loss + each_pred_loss
+                        # print(each_pred_loss)
+                    # print(all_pred_loss)
+                    all_pred_loss = all_pred_loss / args.mc_drop_num
+                    # print(all_pred_loss)
+
+                    # loss = outputs.loss
+                    accelerator.backward(all_pred_loss)
+                    optimizer.step()
+                    lr_scheduler_test_time_tuning.step()
+                    optimizer.zero_grad() 
+
+                    # We keep track of the loss at each epoch
+                    total_loss = total_loss + all_pred_loss.cpu().detach().float()
+
+            logger.info("Epoch %d Loss:{} ".format(total_loss / len(lst_batch_with_pred_labels)), epoch) 
+            #import pdb; pdb.set_trace()
+
+            # save chenkpoint
+            if args.checkpointing_steps == "epoch":
+                output_dir = f"epoch_{epoch}"
+                if args.output_dir is not None:
+                    output_dir = os.path.join(args.output_dir, output_dir)
+                accelerator.save_state(output_dir)
+
+            if args.output_dir is not None:
+                accelerator.wait_for_everyone()
+                unwrapped_model = accelerator.unwrap_model(model)
+                unwrapped_model.save_pretrained(
+                    args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
+                )
+                if accelerator.is_main_process:
+                    tokenizer.save_pretrained(args.output_dir)
+                    if args.push_to_hub:
+                        repo.push_to_hub(commit_message="End of training", auto_lfs_prune=True)
+
+    def test_time_tuning(args, model, tokenizer, lst_batch_with_pred_labels):
 
         logger.info("***** Running Test-time tuning *****")
 
@@ -897,16 +1022,15 @@ def main():
             total_loss = 0
             for step, batch in enumerate(lst_batch_with_pred_labels):
                 batch['decoder_input_ids'] = None
-                #import pdb; pdb.set_trace()
+                
                 with accelerator.accumulate(model):
-                    outputs = model(**batch)
+                    # outputs = model(**batch)
+                    outputs = model(**{key: value for (key, value) in batch.items() if key in ['input_ids', 'labels', 'attention_mask', 'decoder_input_ids']})
                     loss = outputs.loss
                     accelerator.backward(loss)
                     optimizer.step()
                     lr_scheduler_test_time_tuning.step()
                     optimizer.zero_grad() 
-
-                    # logger.info("Test-time Loss:{} ".format(loss))   
 
                     # We keep track of the loss at each epoch
                     total_loss = total_loss + loss.cpu().detach().float()
@@ -952,22 +1076,69 @@ def main():
         # test time tuning
         model.eval()
         if args.do_test_time_tuning:
-            lst_batch_with_pred_labels = []
+            lst_batch_with_best_pred_labels = []
+            lst_batch_with_all_pred_labels = []
+            lst_all_gold_labels = []
+
             for step, batch in enumerate(test_time_tuning_dataloader):
+                gold_labels = batch['labels'].cpu()
+                # output
+                lst_all_gold_labels.append([gold_labels] * args.mc_drop_num)
                 # mc drop
                 lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
-                # majority vote
-                pred_label = run_majority_vote(tokenizer, lst_mc_generated_tokens, args)
 
-                # update batch labels to predicted labels
-                batch['labels'] = pred_label
-                lst_batch_with_pred_labels.append(batch)
+                # make array with MC drop results
+                # (mc_drop_num, batch size, seq_len)
+                arr_mc_generated_tokens = convert_to_arr(lst_mc_generated_tokens, args)
+                #import pdb; pdb.set_trace()
+
+                # prepare soft_label batches
+                lst_mc_preds_batch = []
+                for arr_mc_generated_token in arr_mc_generated_tokens:
+                    if args.do_soft_label:
+                        all_pred_label = torch.tensor(arr_mc_generated_token).to(device)
+                    else:
+                        all_pred_label = torch.tensor(arr_mc_generated_token)
+                    lst_mc_preds_batch.append(all_pred_label)
+                    
+                lst_batch_with_all_pred_labels.append(lst_mc_preds_batch)
+                # import pdb; pdb.set_trace()
+
+                # majority vote for the best pred & its vote num
+                best_pred_label, proportion_best_pred_label = run_majority_vote(tokenizer, arr_mc_generated_tokens, args)
+                #import pdb; pdb.set_trace()
+
+                # update batch labels to the best predicted labels
+                best_pred_batch = copy.deepcopy(batch)
+                best_pred_batch['labels'] = best_pred_label
+                best_pred_batch['proportion_best_pred_labels'] = proportion_best_pred_label
+                lst_batch_with_best_pred_labels.append(best_pred_batch)
                             
             # prepare max_train_steps, train_epoch, lr_scheduler
             args.max_test_time_train_steps, args.test_time_tuning_epoch, lr_scheduler_test_time_tuning = prepare_scheduler(args, accelerator, test_time_tuning_dataloader, optimizer, args.max_test_time_train_steps, args.test_time_tuning_epoch)
 
+            #import pdb; pdb.set_trace()
+            # save pickle
+            with open(os.path.join(args.output_dir, "lst_batch_with_all_pred_labels.pickle"), 'wb') as out_pkl_file:
+                pickle.dump(lst_batch_with_all_pred_labels, out_pkl_file)
+            with open(os.path.join(args.output_dir, "gold_labels.pickle"), 'wb') as out_pkl_file:
+                pickle.dump(lst_all_gold_labels, out_pkl_file)
+            # with open(os.path.join(args.output_dir, "lst_batch_with_best_pred_labels.pickle"), 'wb') as out_pkl_file:
+            #     pickle.dump(lst_batch_with_best_pred_labels, out_pkl_file)
+
+
             # test_time_tuning
-            test_time_tuning(model, tokenizer, lst_batch_with_pred_labels, args)
+            # soft label
+            if args.do_soft_label:
+                #import pdb; pdb.set_trace()
+                test_time_tuning_soft(args, model, tokenizer, test_time_tuning_dataloader, lst_batch_with_all_pred_labels)
+                del lst_batch_with_all_pred_labels
+            # hard label
+            else:
+                #import pdb; pdb.set_trace()
+                # TODO 나중에 test_time_tuning_dataloader로 고치기..
+                test_time_tuning(args, model, tokenizer, lst_batch_with_best_pred_labels)
+                del lst_batch_with_best_pred_labels
 
         # actual inference
         model.eval()
@@ -1018,17 +1189,39 @@ def main():
         del all_gen_tokens
         prediction = post_processing_function(tokenizer, args, raw_datasets, eval_examples, eval_dataset, gen_tokens_concat)
         #import pdb; pdb.set_trace()
-        eval_metric = metric.compute(predictions=prediction.predictions, references=prediction.label_ids)
-        logger.info(f"Evaluation metrics: {eval_metric}")
 
-        if args.output_dir is not None:
-            accelerator.wait_for_everyone()
-            if accelerator.is_main_process:
-                tokenizer.save_pretrained(args.output_dir)
 
-                eval_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-                with open(os.path.join(args.output_dir, "eval_results.json"), "w") as f:
-                    json.dump(eval_results, f)
+        prediction_label_ids = prediction.label_ids
+        prediction_predictions = prediction.predictions
+
+        assert len(prediction_label_ids) == len(prediction_predictions)
+
+        final_em_score, final_f1_score = calculate_f1_em(prediction_label_ids, prediction_predictions)
+
+
+        final_eval_results = {'final_em_score' : final_em_score, 'final_f1_score': final_f1_score}
+
+        logger.info(f"Evaluation metrics: {final_eval_results}")
+        print(final_eval_results)
+
+        with open(os.path.join(args.output_dir, "final_eval_results.json"), "w") as f:
+            json.dump(final_eval_results, f)
+
+        #import pdb; pdb.set_trace()
+
+        if args.dataset_name is not None:
+            # TODO) 나중에 지우기
+            eval_metric = metric.compute(predictions=prediction_predictions, references=prediction_label_ids)
+            logger.info(f"Evaluation metrics: {eval_metric}")
+
+            if args.output_dir is not None:
+                accelerator.wait_for_everyone()
+                if accelerator.is_main_process:
+                    tokenizer.save_pretrained(args.output_dir)
+
+                    eval_results = {f"eval_{k}": v for k, v in eval_metric.items()}
+                    with open(os.path.join(args.output_dir, "eval_results.json"), "w") as f:
+                        json.dump(eval_results, f)
 
 
 

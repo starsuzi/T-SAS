@@ -2,9 +2,10 @@ DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-xl
 DATASET_NAME=sciq
 
-OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/orig_prompt/${DATE}
-mkdir -p ${OUTPUT_DIR}
+EPOCH=1
 
+OUTPUT_DIR=./outputs/${DATASET_NAME}/context/train/model/${MODEL}/orig_prompt/lora/epoch/${EPOCH}/${DATE}
+mkdir -p ${OUTPUT_DIR}
 
 CUDA_VISIBLE_DEVICES=4 python run_squad.py \
     --model_name_or_path ${MODEL} \
@@ -12,15 +13,20 @@ CUDA_VISIBLE_DEVICES=4 python run_squad.py \
     --question_column question \
     --answer_column correct_answer \
     --context_column support \
+    --learning_rate 3e-5 \
     --max_seq_length 384 \
     --doc_stride 128 \
-    --per_device_eval_batch_size 4 \
     --output_dir ${OUTPUT_DIR} \
     --overwrite_cache \
+    --train_peft_model \
     --val_column 'test' \
     --do_eval \
+    --do_train \
+    --num_train_epochs ${EPOCH} \
+    --per_device_train_batch_size 6 \
 
     #--num_beams 1 \
     # --max_train_samples 5 \
     # --max_eval_samples 5 \
     # --max_test_time_tuning_samples 5
+

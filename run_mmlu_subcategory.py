@@ -184,6 +184,7 @@ def parse_args():
     parser.add_argument("--do_soft_label", action="store_true")
     # filtering
     parser.add_argument("--do_filtering", action="store_true")
+    parser.add_argument('--percentile_value', type=int, default=50)
     #
     parser.add_argument('--without_multi_features', action="store_true")
     parser.add_argument("--ntrain", "-k", type=int, default=5)
@@ -762,14 +763,15 @@ def eval(args, model, tokenizer, test_df, accelerator):
                     lst_max_conf_per_mc.append(max(conf_per_mc))
                     #import pdb; pdb.set_trace()
             
-            median_conf = np.median(lst_max_conf_per_mc) # len: mc_drop_num * (examples in subject)
+            # median_conf = np.median(lst_max_conf_per_mc) # len: mc_drop_num * (examples in subject)
+            conf_threshold = np.percentile(lst_max_conf_per_mc, args.percentile_value) # 50 == median
 
 
             lst_skip_idx = []
 
             for idx, dict_majority_each_example_vote in enumerate(lst_majority_vote):
                 # majority vote without low confidence
-                lst_filtered_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence'] if [*mc_preds.values()][0] > median_conf]            
+                lst_filtered_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence'] if [*mc_preds.values()][0] > conf_threshold]            
                 if lst_filtered_preds  == []:
                     lst_skip_idx.append(idx)
                     continue
@@ -778,8 +780,8 @@ def eval(args, model, tokenizer, test_df, accelerator):
 
                 filtered_pred_label, filtered_pred_soft_label = run_majority_vote(tokenizer, lst_filtered_preds, dict_majority_each_example_vote, args)
                 
-                logger.info('median_conf')
-                logger.info(median_conf)
+                logger.info('conf_threshold')
+                logger.info(conf_threshold)
 
                 lst_pred_label.append(filtered_pred_label)
                 lst_pred_soft_label.append(filtered_pred_soft_label)

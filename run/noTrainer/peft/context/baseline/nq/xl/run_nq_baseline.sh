@@ -1,24 +1,24 @@
 DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-xl
-DATASET_NAME=sciq
+DATASET_NAME=nq
 
 OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/orig_prompt/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
 
-CUDA_VISIBLE_DEVICES=4 python run_squad.py \
+CUDA_VISIBLE_DEVICES=3 python run_squad.py \
     --model_name_or_path ${MODEL} \
-    --dataset_name ${DATASET_NAME} \
+    --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \
     --question_column question \
-    --answer_column correct_answer \
-    --context_column support \
+    --answer_column answers \
+    --context_column context \
     --max_seq_length 384 \
     --doc_stride 128 \
     --per_device_eval_batch_size 4 \
     --output_dir ${OUTPUT_DIR} \
     --overwrite_cache \
-    --val_column 'test' \
-    --do_eval \
+    --val_column 'validation' \
+    --do_eval
 
     #--num_beams 1 \
     # --max_train_samples 5 \
