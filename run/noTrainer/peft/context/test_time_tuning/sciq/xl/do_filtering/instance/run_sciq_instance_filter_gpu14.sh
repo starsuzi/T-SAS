@@ -21,7 +21,7 @@ do
                 --learning_rate 3e-5 \
                 --max_seq_length 384 \
                 --doc_stride 128 \
-                --per_device_eval_batch_size 8 \
+                --per_device_eval_batch_size 6 \
                 --output_dir ${OUTPUT_DIR} \
                 --overwrite_cache \
                 --train_peft_model \
