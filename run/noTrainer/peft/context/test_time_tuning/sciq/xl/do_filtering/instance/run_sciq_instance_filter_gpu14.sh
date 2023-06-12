@@ -14,6 +14,7 @@ do
             CUDA_VISIBLE_DEVICES=1 python run_squad.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
+                --dataset_name ${DATASET_NAME} \
                 --question_column question \
                 --answer_column correct_answer \
                 --context_column support \
