@@ -1,5 +1,9 @@
 import json
 import datasets
+import torch
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-xl")
 
 {
     "answers": {
@@ -14,14 +18,19 @@ import datasets
 
 lst_dict_final = []
 example_id = 0
-
-with open('/data/soyeong/prompt_test/data/trivia/original/dpr/biencoder-trivia-dev.json', 'r') as input_file:
+count = 0
+with open('/data/soyeong/prompt_test/data/trivia/original/dpr/biencoder-trivia-train.json', 'r') as input_file:
     json_data = json.load(input_file)
     print(len(json_data))
 
     for data in json_data:
         if data['positive_ctxs'] == []:
             continue
+            
+        if len( tokenizer( data['positive_ctxs'][0]['text']).input_ids) + len(tokenizer(data['question']).input_ids) > 512:
+            count = count + 1
+            continue
+            #import pdb; pdb.set_trace()
 
         dict_final = {}
 
@@ -58,7 +67,9 @@ with open('/data/soyeong/prompt_test/data/trivia/original/dpr/biencoder-trivia-d
         lst_dict_final.append(dict_final)
 
         
-with open("/data/soyeong/prompt_test/data/trivia/preprocessed/trivia_dev_all.json", "w") as output_file:
+with open("/data/soyeong/prompt_test/data/trivia/preprocessed/trivia_train_all.json", "w") as output_file:
     json.dump(lst_dict_final, output_file, indent=4, sort_keys=True)
 
 print(len(lst_dict_final))
+print('long')
+print(count)
