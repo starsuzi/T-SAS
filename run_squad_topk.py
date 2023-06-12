@@ -288,6 +288,12 @@ def parse_args():
         help="Batch size (per device) for the training dataloader.",
     )
     parser.add_argument(
+        "--per_device_topk_batch_size",
+        type=int,
+        default=8,
+        help="Batch size (per device) for the evaluation dataloader.",
+    )
+    parser.add_argument(
         "--per_device_eval_batch_size",
         type=int,
         default=8,
@@ -604,7 +610,7 @@ def main():
     if args.do_test_time_tuning:       
         test_time_tuning_dataset_for_model = test_time_tuning_dataset.remove_columns(["example_id", "offset_mapping"])        
         test_time_tuning_dataloader = DataLoader(
-            test_time_tuning_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
+            test_time_tuning_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_topk_batch_size
         )
        
 
@@ -805,74 +811,77 @@ def main():
                         repo.push_to_hub(commit_message="End of training", auto_lfs_prune=True)
 
 
-    # MC-drop
-    def run_mc_drop(model, tokenizer, batch, gen_kwargs, args):
-        logger.info("***** Running MC Drop *****")
-        logger.info(f"  Batch size = {args.per_device_eval_batch_size}")
+    # Top-k
+    def run_topk(model, tokenizer, batch, gen_kwargs, args):
+        logger.info("***** Running Top-k *****")
+        logger.info(f"  Batch size = {args.per_device_topk_batch_size}")
 
-        #model.eval()
-        lst_generated_tokens = []
+        
         with torch.no_grad():
-            for i in range(0, args.mc_drop_num):
-                model.train()
+            model.eval()
 
-                outputs = accelerator.unwrap_model(model).generate(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
-                    **gen_kwargs,
-                    #return_dict_in_generate=True,
-                    #output_scores=True
-                )
-                # import pdb; pdb.set_trace()
-                # # calculate prob
-                # transition_scores = model.compute_transition_scores(
-                #     outputs.sequences, outputs.scores, normalize_logits=True
-                # )
+            outputs = accelerator.unwrap_model(model).generate(
+                input_ids=batch["input_ids"],
+                attention_mask=batch["attention_mask"],
+                do_sample=True,
+                **gen_kwargs,
+                return_dict_in_generate=True,
+                output_scores=True,
+                top_k = 40,
+                temperature = 0.7,
+                num_return_sequences = args.mc_drop_num
+            )
+            
+            # calculate prob
+            transition_scores = model.compute_transition_scores(
+                outputs.sequences, outputs.scores, normalize_logits=True
+            )
 
-                # transition_scores = accelerator.gather_for_metrics(transition_scores)
-                # transition_scores = transition_scores.cpu()
+            transition_scores = accelerator.gather_for_metrics(transition_scores)
+            transition_scores = transition_scores.cpu()
 
-                # output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
-                # probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
+            output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
+            probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
 
-                # generated_tokens
-                generated_tokens = outputs#.sequences
-                generated_tokens = accelerator.gather_for_metrics(generated_tokens)
-                generated_tokens = generated_tokens.cpu().numpy()
+            # generated_tokens
+            generated_tokens = outputs.sequences
+            generated_tokens = accelerator.gather_for_metrics(generated_tokens)
+            generated_tokens = generated_tokens.cpu().numpy()
 
-                # input_length is the length of the input prompt for decoder-only models, like the GPT family, and 1 for
-                # encoder-decoder models, like BART or T5.
-                # delete bos token
-                # generated_tokens = generated_tokens[:, 1:] 
-                input_length = 1 if model.config.is_encoder_decoder else inputs.input_ids.shape[1]
-                generated_tokens = generated_tokens[:, input_length:]
+            # input_length is the length of the input prompt for decoder-only models, like the GPT family, and 1 for
+            # encoder-decoder models, like BART or T5.
+            # delete bos token
+            # generated_tokens = generated_tokens[:, 1:] 
+            input_length = 1 if model.config.is_encoder_decoder else inputs.input_ids.shape[1]
+            generated_tokens = generated_tokens[:, input_length:]
 
-                # gold labels
-                gold_labels = batch['labels']
-                gold_labels = gold_labels.cpu().numpy()
+            # gold labels
+            gold_labels = batch['labels']
+            gold_labels = gold_labels.cpu().numpy()
 
-                if args.ignore_pad_token_for_loss:
-                    # Replace -100 in the labels as we can't decode them.
-                    gold_labels = np.where(gold_labels != -100, gold_labels, tokenizer.pad_token_id)
-                
-                logger.info('==========================================')
-                logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
-                logger.info('Prediction : ')
-                logger.info(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
-                #logger.info('Probabilities : ')
-                #logger.info(probabilities)
-                logger.info('Answer : ')
-                logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
+            if args.ignore_pad_token_for_loss:
+                # Replace -100 in the labels as we can't decode them.
+                gold_labels = np.where(gold_labels != -100, gold_labels, tokenizer.pad_token_id)
+            
+            logger.info('==========================================')
+            logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
+            logger.info('Prediction : ')
+            logger.info(tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True))
+            #logger.info('Probabilities : ')
+            #logger.info(probabilities)
+            logger.info('Answer : ')
+            logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
 
-                # delete tokenizer.pad_token_id
-                generated_tokens = np.array([[(t if t != tokenizer.pad_token_id else -100) for t in tok] for tok in generated_tokens])
-                
-                if isinstance(generated_tokens, tuple):
-                    generated_tokens = generated_tokens[0]
+            # delete tokenizer.pad_token_id
+            generated_tokens = np.array([[(t if t != tokenizer.pad_token_id else -100) for t in tok] for tok in generated_tokens])
+            
+            if isinstance(generated_tokens, tuple):
+                generated_tokens = generated_tokens[0]
 
-                lst_generated_tokens.append(generated_tokens)
+            #import pdb; pdb.set_trace()
 
-        return lst_generated_tokens
+        return generated_tokens
+
 
     #
     def convert_to_arr(lst_mc_generated_tokens, args):
@@ -956,7 +965,7 @@ def main():
         logger.info(tokenizer.batch_decode(arr_max_vote_pred, skip_special_tokens=True))
         logger.info('Max votes num: ')
         logger.info( arr_num_max_vote_pred.tolist())
-        logger.info('Max votes num / mc_drop_num: ')
+        logger.info('Max votes num / topk_num: ')
         logger.info( num_vote_pred_label.tolist())
         
 
@@ -1088,11 +1097,15 @@ def main():
                 lst_all_gold_labels.append([gold_labels])
                 
                 # mc drop
-                lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
+                #lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
+                # run_topk
+                lst_mc_generated_tokens = run_topk(model, tokenizer, batch, gen_kwargs, args)
 
                 # make array with MC drop results
                 # (mc_drop_num, batch size, seq_len)
-                arr_mc_generated_tokens = convert_to_arr(lst_mc_generated_tokens, args)
+                #import pdb; pdb.set_trace()
+                arr_mc_generated_tokens = torch.from_numpy(lst_mc_generated_tokens).unsqueeze(dim=1)
+                #arr_mc_generated_tokens = convert_to_arr(lst_mc_generated_tokens, args)
                 #import pdb; pdb.set_trace()
 
                 # prepare soft_label batches

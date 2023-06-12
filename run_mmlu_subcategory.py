@@ -23,6 +23,7 @@ import json
 import logging
 import math
 import os
+os.environ['TRANSFORMERS_CACHE'] = '/data/syjeong/cache'
 import random
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -185,8 +186,9 @@ def parse_args():
     # filtering
     parser.add_argument("--do_filtering", action="store_true")
     parser.add_argument('--percentile_value', type=int, default=50)
+    # filter_thres
+    parser.add_argument("--filter_thres", type=float, default=-1)
     #
-    parser.add_argument('--without_multi_features', action="store_true")
     parser.add_argument("--ntrain", "-k", type=int, default=5)
 
     parser.add_argument(
@@ -452,8 +454,12 @@ def run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, 
     # convert list into dictionary
     # lst_mc_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence']]
     #lst_filtered_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence'] if [*mc_preds.values()][0] > 0.5]
+    
+    # find max pred
     dict_mc_freq_preds = Counter(lst_mc_preds)
     freq_pred = max(dict_mc_freq_preds, key=dict_mc_freq_preds.get)
+    # find max pred's vote
+    num_vote_freq_pred = dict_mc_freq_preds[freq_pred]
 
     # logger.info('===================================')
     logger.info('Votes : ')
@@ -471,16 +477,14 @@ def run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, 
     logger.info('Votes preds : ')
     logger.info(lst_soft_label)
 
-    #import pdb; pdb.set_trace()
+    #
     dict_majority_each_example_vote['vote'] = lst_soft_label
     dict_majority_each_example_vote['max_vote'] = freq_pred
 
-    return freq_pred, lst_soft_label
+    return freq_pred, lst_soft_label, num_vote_freq_pred / args.mc_drop_num
 
 
 def test_time_tuning(model, optimizer, lr_scheduler, tokenizer, test_time_tuning_dataloader, accelerator, args):
-
-    logger.info("***** Running Test-time tuning *****")
 
     if args.do_soft_label:
         logger.info("***** soft label *****")
@@ -739,15 +743,19 @@ def eval(args, model, tokenizer, test_df, accelerator):
             # majority vote
             logger.info("***** Running Majority Vote *****")
             lst_mc_preds = [[*mc_preds.keys()][0] for mc_preds in dict_majority_each_example_vote['pred_confidence']]
-            pred_label, pred_soft_label = run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, args)
+            pred_label, pred_soft_label, proportion_vote_freq_pred = run_majority_vote(tokenizer, lst_mc_preds, dict_majority_each_example_vote, args)
             lst_pred_label.append(pred_label)
             lst_pred_soft_label.append(pred_soft_label)
 
             logger.info('Gold Answer')
             logger.info(label)
+            logger.info('proportion_vote_freq_pred')
+            logger.info(proportion_vote_freq_pred)
             #import pdb; pdb.set_trace()
 
             dict_majority_each_example_vote['gold_answer'] = label
+            dict_majority_each_example_vote['proportion_vote_freq_pred'] = proportion_vote_freq_pred
+            
 
             lst_majority_vote.append(dict_majority_each_example_vote)
             #import pdb; pdb.set_trace()
@@ -766,7 +774,6 @@ def eval(args, model, tokenizer, test_df, accelerator):
             # median_conf = np.median(lst_max_conf_per_mc) # len: mc_drop_num * (examples in subject)
             conf_threshold = np.percentile(lst_max_conf_per_mc, args.percentile_value) # 50 == median
 
-
             lst_skip_idx = []
 
             for idx, dict_majority_each_example_vote in enumerate(lst_majority_vote):
@@ -778,7 +785,7 @@ def eval(args, model, tokenizer, test_df, accelerator):
 
                 logger.info("***** Running MC Drop without low confidence *****")
 
-                filtered_pred_label, filtered_pred_soft_label = run_majority_vote(tokenizer, lst_filtered_preds, dict_majority_each_example_vote, args)
+                filtered_pred_label, filtered_pred_soft_label, _ = run_majority_vote(tokenizer, lst_filtered_preds, dict_majority_each_example_vote, args)
                 
                 logger.info('conf_threshold')
                 logger.info(conf_threshold)
@@ -791,6 +798,21 @@ def eval(args, model, tokenizer, test_df, accelerator):
 
             # filter out input_ids with low confidence
             lst_input = [input_id for idx, input_id in enumerate(lst_input) if idx not in lst_skip_idx]
+
+        
+        lst_low_vote_samples_idx = []
+        for idx, dict_majority_each_example_vote in enumerate(lst_majority_vote):
+            # filter out the low voted samples
+            if dict_majority_each_example_vote['proportion_vote_freq_pred'] < args.filter_thres:
+                lst_low_vote_samples_idx.append(idx)
+                #import pdb; pdb.set_trace()
+
+        
+        lst_input = [input_id for idx, input_id in enumerate(lst_input) if idx not in lst_low_vote_samples_idx]
+        lst_pred_label = [input_id for idx, input_id in enumerate(lst_pred_label) if idx not in lst_low_vote_samples_idx]
+        lst_pred_soft_label = [input_id for idx, input_id in enumerate(lst_pred_soft_label) if idx not in lst_low_vote_samples_idx]
+
+        assert len(lst_input) ==  len(lst_pred_label) == len(lst_pred_soft_label)
 
         # test_time_tuning
         test_time_tuning_examples['input_ids'] = lst_input
@@ -816,10 +838,6 @@ def eval(args, model, tokenizer, test_df, accelerator):
         test_time_tuning_dataloader = DataLoader(
             test_time_tuning_dataset, collate_fn=data_collator, shuffle=False, batch_size=args.per_device_eval_batch_size
         )
-    
-        del test_time_tuning_dataset
-        del test_time_tuning_examples
-
 
         # Optimizer
         # Split weights in two groups, one with weight decay and the other not.
@@ -851,11 +869,16 @@ def eval(args, model, tokenizer, test_df, accelerator):
         )
 
         #import pdb; pdb.set_trace()
+        logger.info("***** Running Test-time tuning *****")
+        logger.info(f"  Num examples = {len(test_time_tuning_dataset)}")
+
         test_time_tuning_dataloader, lr_scheduler = accelerator.prepare(test_time_tuning_dataloader, lr_scheduler)
         test_time_tuning(model, optimizer, lr_scheduler, tokenizer, test_time_tuning_dataloader, accelerator, args)
         #import pdb; pdb.set_trace()
 
         del test_time_tuning_dataloader
+        del test_time_tuning_dataset
+        del test_time_tuning_examples
 
         # save
         if not os.path.exists(args.output_dir+'/json/'):
@@ -865,6 +888,9 @@ def eval(args, model, tokenizer, test_df, accelerator):
 
 
     # actual inference
+    logger.info("***** Running Validation *****")
+    logger.info(f"  Num examples = {test_df.shape[0]}")
+    logger.info(f"  Batch size = {args.per_device_eval_batch_size}")
     cors = []
     all_probs = []
 

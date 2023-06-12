@@ -117,12 +117,18 @@ def preprocess_features_function(examples, args, raw_datasets, tokenizer):
     # truncation of the context fail (the tokenized question will take a lots of space). So we remove that
     # left whitespace
     
-    
-    # ("Read this and answer the question\n\n{context}\n\n{question}", "{answer}"),
-    # Padding side determines if we do (question|context) or (context|question).
-    pad_on_right = tokenizer.padding_side == "left"#"right"
-    examples[context_column] =  ['Read this and answer the question\n\n{}'.format(c.strip()) for c in examples[context_column]]
-    examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
+    if args.do_cot:
+        pad_on_right = tokenizer.padding_side == "left"#"right"
+        examples[context_column] =  ["Let's think step by step. Read this and answer the question\n\n{}".format(c.strip()) for c in examples[context_column]]
+        examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
+
+
+    else:
+        # ("Read this and answer the question\n\n{context}\n\n{question}", "{answer}"),
+        # Padding side determines if we do (question|context) or (context|question).
+        pad_on_right = tokenizer.padding_side == "left"#"right"
+        examples[context_column] =  ['Read this and answer the question\n\n{}'.format(c.strip()) for c in examples[context_column]]
+        examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
  
 
     # Please answer a question about the following article. Question: {}\n Article:'
@@ -130,6 +136,8 @@ def preprocess_features_function(examples, args, raw_datasets, tokenizer):
     # pad_on_right = tokenizer.padding_side == "right"
     # examples[question_column] =  ['Please answer a question about the following article. Question: {}\n Article:'.format(q.lstrip()) for q in examples[question_column]] #[q.lstrip() for q in examples[question_column]]
 
+
+    
 
     # Tokenize our examples with truncation and maybe padding, but keep the overflows using a stride. This results
     # in one example possible giving several features when a context is long, each of those features having a

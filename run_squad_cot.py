@@ -23,7 +23,6 @@ import json
 import logging
 import math
 import os
-os.environ['TRANSFORMERS_CACHE'] = '/data/syjeong/cache'
 import random
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -805,6 +804,77 @@ def main():
                         repo.push_to_hub(commit_message="End of training", auto_lfs_prune=True)
 
 
+    # CoT
+    def run_cot(model, tokenizer, batch, gen_kwargs, args):
+        logger.info("***** Running CoT *****")
+        logger.info(f"  Batch size = {args.per_device_eval_batch_size}")
+
+        #model.eval()
+        lst_generated_tokens = []
+        with torch.no_grad():
+            for i in range(0, 1):
+                # model.train()
+                model.eval()
+
+                outputs = accelerator.unwrap_model(model).generate(
+                    input_ids=batch["input_ids"],
+                    attention_mask=batch["attention_mask"],
+                    **gen_kwargs,
+                    return_dict_in_generate=True,
+                    output_scores=True
+                )
+                # import pdb; pdb.set_trace()
+                # calculate prob
+                transition_scores = model.compute_transition_scores(
+                    outputs.sequences, outputs.scores, normalize_logits=True
+                )
+
+                transition_scores = accelerator.gather_for_metrics(transition_scores)
+                transition_scores = transition_scores.cpu()
+
+                output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
+                probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
+
+                # generated_tokens
+                generated_tokens = outputs.sequences
+                generated_tokens = accelerator.gather_for_metrics(generated_tokens)
+                generated_tokens = generated_tokens.cpu().numpy()
+
+                # input_length is the length of the input prompt for decoder-only models, like the GPT family, and 1 for
+                # encoder-decoder models, like BART or T5.
+                # delete bos token
+                # generated_tokens = generated_tokens[:, 1:] 
+                input_length = 1 if model.config.is_encoder_decoder else inputs.input_ids.shape[1]
+                generated_tokens = generated_tokens[:, input_length:]
+
+                # gold labels
+                gold_labels = batch['labels']
+                gold_labels = gold_labels.cpu().numpy()
+
+                if args.ignore_pad_token_for_loss:
+                    # Replace -100 in the labels as we can't decode them.
+                    gold_labels = np.where(gold_labels != -100, gold_labels, tokenizer.pad_token_id)
+                
+                logger.info('==========================================')
+                logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
+                logger.info('Prediction : ')
+                logger.info(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
+                #logger.info('Probabilities : ')
+                #logger.info(probabilities)
+                logger.info('Answer : ')
+                logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
+
+                # delete tokenizer.pad_token_id
+                generated_tokens = np.array([[(t if t != tokenizer.pad_token_id else -100) for t in tok] for tok in generated_tokens])
+                
+                if isinstance(generated_tokens, tuple):
+                    generated_tokens = generated_tokens[0]
+
+                lst_generated_tokens.append(generated_tokens)
+
+        return lst_generated_tokens
+
+
     # MC-drop
     def run_mc_drop(model, tokenizer, batch, gen_kwargs, args):
         logger.info("***** Running MC Drop *****")
@@ -820,23 +890,23 @@ def main():
                     input_ids=batch["input_ids"],
                     attention_mask=batch["attention_mask"],
                     **gen_kwargs,
-                    #return_dict_in_generate=True,
-                    #output_scores=True
+                    return_dict_in_generate=True,
+                    output_scores=True
                 )
                 # import pdb; pdb.set_trace()
-                # # calculate prob
-                # transition_scores = model.compute_transition_scores(
-                #     outputs.sequences, outputs.scores, normalize_logits=True
-                # )
+                # calculate prob
+                transition_scores = model.compute_transition_scores(
+                    outputs.sequences, outputs.scores, normalize_logits=True
+                )
 
-                # transition_scores = accelerator.gather_for_metrics(transition_scores)
-                # transition_scores = transition_scores.cpu()
+                transition_scores = accelerator.gather_for_metrics(transition_scores)
+                transition_scores = transition_scores.cpu()
 
-                # output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
-                # probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
+                output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
+                probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
 
                 # generated_tokens
-                generated_tokens = outputs#.sequences
+                generated_tokens = outputs.sequences
                 generated_tokens = accelerator.gather_for_metrics(generated_tokens)
                 generated_tokens = generated_tokens.cpu().numpy()
 
@@ -1086,9 +1156,14 @@ def main():
                 gold_labels = batch['labels'].cpu()
                 # output
                 lst_all_gold_labels.append([gold_labels])
-                
-                # mc drop
-                lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
+                if args.do_cot:
+                    # cot
+                    lst_mc_generated_tokens = run_cot(model, tokenizer, batch, gen_kwargs, args)
+                    args.mc_drop_num = 1
+                    import pdb; pdb.set_trace()
+                else:
+                    # mc drop
+                    lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
 
                 # make array with MC drop results
                 # (mc_drop_num, batch size, seq_len)
@@ -1111,7 +1186,7 @@ def main():
                 best_pred_label, proportion_best_pred_label = run_majority_vote(tokenizer, arr_mc_generated_tokens, args)
                 
 
-                batch_size = len(batch['input_ids'])
+
                 for filtered_idx in range(batch_size):
                     if proportion_best_pred_label[filtered_idx] >= args.filter_thres:
                         #import pdb; pdb.set_trace()

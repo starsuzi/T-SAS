@@ -23,6 +23,7 @@ import json
 import logging
 import math
 import os
+os.environ['TRANSFORMERS_CACHE'] = '/data/syjeong/cache'
 import random
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -161,6 +162,8 @@ def parse_args():
         default='test',
         help="The name of the test column in the datasets.",
     )
+    # cot
+    parser.add_argument("--do_cot", action="store_true")
     # peft
     parser.add_argument("--eval_peft_model", action="store_true")
     parser.add_argument("--train_peft_model", action="store_true")
@@ -169,6 +172,8 @@ def parse_args():
     parser.add_argument("--mc_drop_num", type=int)
     parser.add_argument('--test_time_tuning_epoch', type=int, default=2)
     parser.add_argument('--max_test_time_tuning_samples', type=int, default=None)
+    # filter_thres
+    parser.add_argument("--filter_thres", type=float, default=-1)
     # soft label
     parser.add_argument("--do_soft_label", action="store_true")
     #
@@ -281,6 +286,12 @@ def parse_args():
         type=int,
         default=8,
         help="Batch size (per device) for the training dataloader.",
+    )
+    parser.add_argument(
+        "--per_device_topk_batch_size",
+        type=int,
+        default=8,
+        help="Batch size (per device) for the evaluation dataloader.",
     )
     parser.add_argument(
         "--per_device_eval_batch_size",
@@ -599,7 +610,7 @@ def main():
     if args.do_test_time_tuning:       
         test_time_tuning_dataset_for_model = test_time_tuning_dataset.remove_columns(["example_id", "offset_mapping"])        
         test_time_tuning_dataloader = DataLoader(
-            test_time_tuning_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
+            test_time_tuning_dataset_for_model, collate_fn=data_collator, batch_size=args.per_device_topk_batch_size
         )
        
 
@@ -800,74 +811,76 @@ def main():
                         repo.push_to_hub(commit_message="End of training", auto_lfs_prune=True)
 
 
-    # MC-drop
-    def run_mc_drop(model, tokenizer, batch, gen_kwargs, args):
-        logger.info("***** Running MC Drop *****")
-        logger.info(f"  Batch size = {args.per_device_eval_batch_size}")
+    # Top-p
+    def run_topp(model, tokenizer, batch, gen_kwargs, args):
+        logger.info("***** Running Top-p *****")
+        logger.info(f"  Batch size = {args.per_device_topk_batch_size}")
 
-        #model.eval()
-        lst_generated_tokens = []
+        
         with torch.no_grad():
-            for i in range(0, args.mc_drop_num):
-                model.train()
+            model.eval()
 
-                outputs = accelerator.unwrap_model(model).generate(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
-                    **gen_kwargs,
-                    return_dict_in_generate=True,
-                    output_scores=True
-                )
-                # import pdb; pdb.set_trace()
-                # calculate prob
-                transition_scores = model.compute_transition_scores(
-                    outputs.sequences, outputs.scores, normalize_logits=True
-                )
+            outputs = accelerator.unwrap_model(model).generate(
+                input_ids=batch["input_ids"],
+                attention_mask=batch["attention_mask"],
+                do_sample=True,
+                **gen_kwargs,
+                return_dict_in_generate=True,
+                output_scores=True,
+                top_p = 0.9,
+                num_return_sequences = args.mc_drop_num
+            )
+            
+            # calculate prob
+            transition_scores = model.compute_transition_scores(
+                outputs.sequences, outputs.scores, normalize_logits=True
+            )
 
-                transition_scores = accelerator.gather_for_metrics(transition_scores)
-                transition_scores = transition_scores.cpu()
+            transition_scores = accelerator.gather_for_metrics(transition_scores)
+            transition_scores = transition_scores.cpu()
 
-                output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
-                probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
+            output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
+            probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
 
-                # generated_tokens
-                generated_tokens = outputs.sequences
-                generated_tokens = accelerator.gather_for_metrics(generated_tokens)
-                generated_tokens = generated_tokens.cpu().numpy()
+            # generated_tokens
+            generated_tokens = outputs.sequences
+            generated_tokens = accelerator.gather_for_metrics(generated_tokens)
+            generated_tokens = generated_tokens.cpu().numpy()
 
-                # input_length is the length of the input prompt for decoder-only models, like the GPT family, and 1 for
-                # encoder-decoder models, like BART or T5.
-                # delete bos token
-                # generated_tokens = generated_tokens[:, 1:] 
-                input_length = 1 if model.config.is_encoder_decoder else inputs.input_ids.shape[1]
-                generated_tokens = generated_tokens[:, input_length:]
+            # input_length is the length of the input prompt for decoder-only models, like the GPT family, and 1 for
+            # encoder-decoder models, like BART or T5.
+            # delete bos token
+            # generated_tokens = generated_tokens[:, 1:] 
+            input_length = 1 if model.config.is_encoder_decoder else inputs.input_ids.shape[1]
+            generated_tokens = generated_tokens[:, input_length:]
 
-                # gold labels
-                gold_labels = batch['labels']
-                gold_labels = gold_labels.cpu().numpy()
+            # gold labels
+            gold_labels = batch['labels']
+            gold_labels = gold_labels.cpu().numpy()
 
-                if args.ignore_pad_token_for_loss:
-                    # Replace -100 in the labels as we can't decode them.
-                    gold_labels = np.where(gold_labels != -100, gold_labels, tokenizer.pad_token_id)
-                
-                logger.info('==========================================')
-                logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
-                logger.info('Prediction : ')
-                logger.info(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
-                logger.info('Probabilities : ')
-                logger.info(probabilities)
-                logger.info('Answer : ')
-                logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
+            if args.ignore_pad_token_for_loss:
+                # Replace -100 in the labels as we can't decode them.
+                gold_labels = np.where(gold_labels != -100, gold_labels, tokenizer.pad_token_id)
+            
+            logger.info('==========================================')
+            logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
+            logger.info('Prediction : ')
+            logger.info(tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True))
+            #logger.info('Probabilities : ')
+            #logger.info(probabilities)
+            logger.info('Answer : ')
+            logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
 
-                # delete tokenizer.pad_token_id
-                generated_tokens = np.array([[(t if t != tokenizer.pad_token_id else -100) for t in tok] for tok in generated_tokens])
-                
-                if isinstance(generated_tokens, tuple):
-                    generated_tokens = generated_tokens[0]
+            # delete tokenizer.pad_token_id
+            generated_tokens = np.array([[(t if t != tokenizer.pad_token_id else -100) for t in tok] for tok in generated_tokens])
+            
+            if isinstance(generated_tokens, tuple):
+                generated_tokens = generated_tokens[0]
 
-                lst_generated_tokens.append(generated_tokens)
+            #import pdb; pdb.set_trace()
 
-        return lst_generated_tokens
+        return generated_tokens
+
 
     #
     def convert_to_arr(lst_mc_generated_tokens, args):
@@ -937,10 +950,10 @@ def main():
             arr_num_max_vote_pred[i] = num_max_vote_pred
 
         #import pdb; pdb.set_trace()
-        pred_label = torch.tensor(arr_max_vote_pred).to(device)
-        num_vote_pred_label = torch.tensor(arr_num_max_vote_pred).to(device)
+        pred_label = torch.tensor(arr_max_vote_pred)#.to(device)
+        num_vote_pred_label = torch.tensor(arr_num_max_vote_pred)#.to(device)
         
-        # probability 
+        # proportion of the best vote num 
         num_vote_pred_label = num_vote_pred_label / args.mc_drop_num
 
         if args.ignore_pad_token_for_loss:
@@ -951,7 +964,7 @@ def main():
         logger.info(tokenizer.batch_decode(arr_max_vote_pred, skip_special_tokens=True))
         logger.info('Max votes num: ')
         logger.info( arr_num_max_vote_pred.tolist())
-        logger.info('Max votes num / args.mc_drop_num: ')
+        logger.info('Max votes num / topp_num: ')
         logger.info( num_vote_pred_label.tolist())
         
 
@@ -959,9 +972,6 @@ def main():
 
 
     def test_time_tuning_soft(args, model, tokenizer, test_time_tuning_dataloader, lst_batch_with_pred_labels):
-
-        logger.info("***** Running Test-time tuning *****")
-
 
         for epoch in range(0, args.test_time_tuning_epoch):
             model.train()
@@ -1012,24 +1022,16 @@ def main():
                     if args.push_to_hub:
                         repo.push_to_hub(commit_message="End of training", auto_lfs_prune=True)
 
-    def test_time_tuning(args, model, tokenizer, lst_batch_with_pred_labels):
-
-        logger.info("***** Running Test-time tuning *****")
-
-
+    def test_time_tuning(args, model, tokenizer, filtered_test_time_tuning_dataloader):
         for epoch in range(0, args.test_time_tuning_epoch):
             model.train()
             total_loss = 0
-            for step, batch in enumerate(lst_batch_with_pred_labels):
+            for step, batch in enumerate(filtered_test_time_tuning_dataloader):
                 batch['decoder_input_ids'] = None
-                for sample in batch:
-                    if sample['proportion_best_pred_labels'] > 0.1:
-                        
-                        import pdb; pdb.set_trace()
-                
+                # import pdb; pdb.set_trace()
+                # tokenizer.decode(batch['input_ids'][0])
                 with accelerator.accumulate(model):
-                    # outputs = model(**batch)
-                    outputs = model(**{key: value for (key, value) in batch.items() if key in ['input_ids', 'labels', 'attention_mask', 'decoder_input_ids']})
+                    outputs = model(**batch)
                     loss = outputs.loss
                     accelerator.backward(loss)
                     optimizer.step()
@@ -1039,7 +1041,7 @@ def main():
                     # We keep track of the loss at each epoch
                     total_loss = total_loss + loss.cpu().detach().float()
 
-            logger.info("Epoch %d Loss:{} ".format(total_loss / len(lst_batch_with_pred_labels)), epoch) 
+            logger.info("Epoch %d Loss:{} ".format(total_loss / len(filtered_test_time_tuning_dataloader)), epoch) 
             #import pdb; pdb.set_trace()
 
             # save chenkpoint
@@ -1084,16 +1086,25 @@ def main():
             lst_batch_with_all_pred_labels = []
             lst_all_gold_labels = []
 
+            lst_filtered_input_ids = []
+            lst_filtered_labels = []
+            filtered_test_time_tuning_examples = {}
+
             for step, batch in enumerate(test_time_tuning_dataloader):
                 gold_labels = batch['labels'].cpu()
                 # output
-                lst_all_gold_labels.append([gold_labels] * args.mc_drop_num)
+                lst_all_gold_labels.append([gold_labels])
+                
                 # mc drop
-                lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
+                #lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
+                # run_topk
+                lst_mc_generated_tokens = run_topp(model, tokenizer, batch, gen_kwargs, args)
 
                 # make array with MC drop results
                 # (mc_drop_num, batch size, seq_len)
-                arr_mc_generated_tokens = convert_to_arr(lst_mc_generated_tokens, args)
+                #import pdb; pdb.set_trace()
+                arr_mc_generated_tokens = torch.from_numpy(lst_mc_generated_tokens).unsqueeze(dim=1)
+                #arr_mc_generated_tokens = convert_to_arr(lst_mc_generated_tokens, args)
                 #import pdb; pdb.set_trace()
 
                 # prepare soft_label batches
@@ -1110,38 +1121,68 @@ def main():
 
                 # majority vote for the best pred & its vote num
                 best_pred_label, proportion_best_pred_label = run_majority_vote(tokenizer, arr_mc_generated_tokens, args)
-                #import pdb; pdb.set_trace()
+                
 
+                batch_size = len(batch['input_ids'])
+                for filtered_idx in range(batch_size):
+                    if proportion_best_pred_label[filtered_idx] >= args.filter_thres:
+                        #import pdb; pdb.set_trace()
+                        lst_filtered_input_ids.append(batch['input_ids'][filtered_idx])
+                        lst_filtered_labels.append(best_pred_label[filtered_idx])
+
+                # TODO 나중에 지우기..
                 # update batch labels to the best predicted labels
                 best_pred_batch = copy.deepcopy(batch)
                 best_pred_batch['labels'] = best_pred_label
                 best_pred_batch['proportion_best_pred_labels'] = proportion_best_pred_label
                 lst_batch_with_best_pred_labels.append(best_pred_batch)
                             
-            # prepare max_train_steps, train_epoch, lr_scheduler
-            args.max_test_time_train_steps, args.test_time_tuning_epoch, lr_scheduler_test_time_tuning = prepare_scheduler(args, accelerator, test_time_tuning_dataloader, optimizer, args.max_test_time_train_steps, args.test_time_tuning_epoch)
-
+            assert len(lst_filtered_input_ids) == len(lst_filtered_labels)
+            filtered_test_time_tuning_examples['input_ids'] = lst_filtered_input_ids
+            filtered_test_time_tuning_examples['labels'] = lst_filtered_labels
             #import pdb; pdb.set_trace()
+
+            filtered_test_time_tuning_examples = datasets.Dataset.from_dict(filtered_test_time_tuning_examples)
+
+            filtered_test_time_tuning_dataloader = DataLoader(
+            filtered_test_time_tuning_examples, collate_fn=data_collator, shuffle=False, batch_size=args.per_device_eval_batch_size
+            )
+
+            filtered_test_time_tuning_dataloader = accelerator.prepare(
+                filtered_test_time_tuning_dataloader
+            )
+
+            # prepare max_train_steps, train_epoch, lr_scheduler
+            args.max_test_time_train_steps, args.test_time_tuning_epoch, lr_scheduler_test_time_tuning = prepare_scheduler(args, accelerator, filtered_test_time_tuning_dataloader, optimizer, args.max_test_time_train_steps, args.test_time_tuning_epoch)
+
+
+            # TODO 나중에 지우기..
             # save pickle
             with open(os.path.join(args.output_dir, "lst_batch_with_all_pred_labels.pickle"), 'wb') as out_pkl_file:
                 pickle.dump(lst_batch_with_all_pred_labels, out_pkl_file)
             with open(os.path.join(args.output_dir, "gold_labels.pickle"), 'wb') as out_pkl_file:
                 pickle.dump(lst_all_gold_labels, out_pkl_file)
-            # with open(os.path.join(args.output_dir, "lst_batch_with_best_pred_labels.pickle"), 'wb') as out_pkl_file:
-            #     pickle.dump(lst_batch_with_best_pred_labels, out_pkl_file)
-
+             
 
             # test_time_tuning
             # soft label
             if args.do_soft_label:
+                logger.info("***** Running Test-time tuning *****")
+                logger.info(f"  Num examples = {len(test_time_tuning_dataset)}")
+
                 #import pdb; pdb.set_trace()
+                args.max_test_time_train_steps, args.test_time_tuning_epoch, lr_scheduler_test_time_tuning = prepare_scheduler(args, accelerator, test_time_tuning_dataloader, optimizer, args.max_test_time_train_steps, args.test_time_tuning_epoch)
+
                 test_time_tuning_soft(args, model, tokenizer, test_time_tuning_dataloader, lst_batch_with_all_pred_labels)
                 del lst_batch_with_all_pred_labels
+                del test_time_tuning_dataloader
             # hard label
             else:
-                # TODO 나중에 test_time_tuning_dataloader로 고치기..
-                test_time_tuning(args, model, tokenizer, lst_batch_with_best_pred_labels)
-                del lst_batch_with_best_pred_labels
+                logger.info("***** Running Test-time tuning *****")
+                logger.info(f"  Num examples = {len(filtered_test_time_tuning_examples)}")
+                test_time_tuning(args, model, tokenizer, filtered_test_time_tuning_dataloader)
+                del filtered_test_time_tuning_dataloader
+                del filtered_test_time_tuning_examples
 
         # actual inference
         model.eval()
