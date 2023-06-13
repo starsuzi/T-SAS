@@ -11,7 +11,7 @@ do
             OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/filter_thres/${FILTER_THRES}/orig_prompt/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=1 python run_squad.py \
+            CUDA_VISIBLE_DEVICES=0 python run_squad.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
                 --dataset_name ${DATASET_NAME} \
