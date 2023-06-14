@@ -67,7 +67,7 @@ with open('/data/soyeong/prompt_test/data/trivia/original/dpr/biencoder-trivia-t
         lst_dict_final.append(dict_final)
 
         
-with open("/data/soyeong/prompt_test/data/trivia/preprocessed/trivia_train_all.json", "w") as output_file:
+with open("/data/soyeong/prompt_test/data/trivia/preprocessed/trivia_train_notPreprocessed.json", "w") as output_file:
     json.dump(lst_dict_final, output_file, indent=4, sort_keys=True)
 
 print(len(lst_dict_final))

@@ -2,11 +2,11 @@ DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-xl
 DATASET_NAME=nq
 
-OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/orig_prompt/${DATE}
+OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/smcho_prompt/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
 
-CUDA_VISIBLE_DEVICES=7 python run_squad.py \
+CUDA_VISIBLE_DEVICES=7 python run_squad_prompt.py \
     --model_name_or_path ${MODEL} \
     --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \
     --question_column question \

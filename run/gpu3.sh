@@ -1,2 +1,2 @@
-bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/nq/xxl/do_filtering/instance/run_nq_instance_filter.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/trivia/xl/do_filtering/instance/run_trivia_instance_filter_gpu3.sh
 CUDA_VISIBLE_DEVICES=3 bash /data/syjeong/prompt_test/run/run.sh

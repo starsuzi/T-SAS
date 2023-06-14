@@ -1,20 +1,20 @@
 DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
-MODEL=google/flan-t5-xl
-DATASET_NAME=trivia
+MODEL=bigscience/T0_3B
+DATASET_NAME=nq
 
-for MC_DROP_NUM in 15 # 5 7 10 15
+for MC_DROP_NUM in 15
 do
-    for EPOCH in 2 #5
+    for EPOCH in 5 #2 5
     do
-        for FILTER_THRES in -1 0.3 0.5 0.7 0.9
+        for FILTER_THRES in -1 0.5 #0.3 0.5 0.7 0.9
         do
             OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/filter_thres/${FILTER_THRES}/orig_prompt/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=4 python run_squad.py \
+            CUDA_VISIBLE_DEVICES=6 python run_squad.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
-                --validation_file ./data/trivia/preprocessed/trivia_dev.json \
+                --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \
                 --question_column question \
                 --answer_column answers \
                 --context_column context \

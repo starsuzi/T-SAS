@@ -1,2 +1,2 @@
-bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/nq/xxl/run_nq_baseline.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/trivia/xl/do_filtering/instance/run_trivia_instance_filter.sh
 CUDA_VISIBLE_DEVICES=4 bash /data/syjeong/prompt_test/run/run.sh
