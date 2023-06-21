@@ -2,12 +2,12 @@ DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-xl
 DATASET_NAME=squad
 
-EPOCH=2
+EPOCH=1
 
 OUTPUT_DIR=./outputs/${DATASET_NAME}/context/train/model/${MODEL}/orig_prompt/lora/epoch/${EPOCH}/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
-CUDA_VISIBLE_DEVICES=5 python run_squad.py \
+CUDA_VISIBLE_DEVICES=3 python run_squad.py \
     --model_name_or_path ${MODEL} \
     --dataset_name ${DATASET_NAME} \
     --question_column question \
@@ -23,7 +23,7 @@ CUDA_VISIBLE_DEVICES=5 python run_squad.py \
     --do_eval \
     --do_train \
     --num_train_epochs ${EPOCH} \
-    --per_device_train_batch_size 6 \
+    --per_device_train_batch_size 12 \
 
 
 

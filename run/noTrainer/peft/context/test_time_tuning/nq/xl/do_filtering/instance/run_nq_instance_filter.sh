@@ -2,16 +2,16 @@ DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-xl
 DATASET_NAME=nq
 
-for MC_DROP_NUM in 7
+for MC_DROP_NUM in 15
 do
-    for EPOCH in 7 10
+    for EPOCH in 3
     do
-        for FILTER_THRES in 0.3 0.5 0.7 0.9
+        for FILTER_THRES in 0.2 0.4 0.6 0.7 0.8 0.9 0.1
         do
             OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/filter_thres/${FILTER_THRES}/orig_prompt/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=5 python run_squad.py \
+            CUDA_VISIBLE_DEVICES=7 python run_squad.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
                 --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \

@@ -7,7 +7,7 @@ EPOCH=1
 OUTPUT_DIR=./outputs/temp/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
-CUDA_VISIBLE_DEVICES=3,7 accelerate launch run_squad_multi.py \
+CUDA_VISIBLE_DEVICES=3,5 accelerate launch run_squad_multi.py \
     --model_name_or_path ${MODEL} \
     --dataset_name ${DATASET_NAME} \
     --question_column question \

@@ -2,9 +2,9 @@ DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-xl
 DATASET_NAME=squad
 
-for MC_DROP_NUM in 5 7 10
+for MC_DROP_NUM in 10 #5 7 10
 do
-    for EPOCH in  2 5 7
+    for EPOCH in  2
     do
         OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/orig_prompt/soft_label/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
         mkdir -p ${OUTPUT_DIR}

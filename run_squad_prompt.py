@@ -177,6 +177,8 @@ def parse_args():
     # soft label
     parser.add_argument("--do_soft_label", action="store_true")
     #
+    parser.add_argument("--prompt_style", type=str)
+    #
     parser.add_argument('--without_multi_features', action="store_true")
     parser.add_argument(
         "--overwrite_cache", action="store_true", help="Overwrite the cached training and evaluation sets"

@@ -1,3 +1,10 @@
-bash run/noTrainer/peft/context/test_time_tuning/squad/xl/run_squad_mc10_epoch1.sh
-bash run/noTrainer/peft/context/baseline/squad/xl/run_squad_baseline.sh
-bash run/noTrainer/peft/context/train/squad/xl/run_squad.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_smcho_article_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_smcho_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_smcho_reverse_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_article_answer_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_smcho_article_reverse_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_article_answer_reverse_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_cq_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_CQ_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_qc_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/topk/prompt/run_trivia_topk_thres_QC_prompt.sh

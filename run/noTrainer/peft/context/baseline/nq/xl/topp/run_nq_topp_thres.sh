@@ -6,12 +6,12 @@ for MC_DROP_NUM in 15 #7 10 15
 do
     for EPOCH in 3
     do
-        for FILTER_THRES in 0.5
+        for FILTER_THRES in 0.5 0.7 0.9 0.1 -1
         do
-            OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/topp/model/${MODEL}/filter_thres/${FILTER_THRES}/orig_prompt/lora/topp_num/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
+            OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/topp/model/${MODEL}/filter_thres/${FILTER_THRES}/orig_prompt/lora/topp_num/${MC_DROP_NUM}/temperature/0.5/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=4 python run_squad_topp.py \
+            CUDA_VISIBLE_DEVICES=2 python run_squad_topp.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
                 --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \

@@ -1,1 +1,1 @@
-bash /data/syjeong/prompt_test/run/noTrainer/peft/context/train/squad/xl/run_squad.sh
+CUDA_VISIBLE_DEVICES=1 bash /data/syjeong/prompt_test/run/run.sh

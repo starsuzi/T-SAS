@@ -820,23 +820,28 @@ def main():
                     input_ids=batch["input_ids"],
                     attention_mask=batch["attention_mask"],
                     **gen_kwargs,
-                    #return_dict_in_generate=True,
-                    #output_scores=True
+                    return_dict_in_generate=True,
+                    output_scores=True
                 )
                 # import pdb; pdb.set_trace()
-                # # calculate prob
+                # calculate prob
                 # transition_scores = model.compute_transition_scores(
                 #     outputs.sequences, outputs.scores, normalize_logits=True
                 # )
 
-                # transition_scores = accelerator.gather_for_metrics(transition_scores)
-                # transition_scores = transition_scores.cpu()
+                #transition_scores = accelerator.gather_for_metrics(transition_scores)
+                #transition_scores = transition_scores.cpu()
 
                 # output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
                 # probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
 
+                # probabilities =(
+                #     torch.sum(torch.exp(transition_scores), dim=1) \ 
+                #     / torch.sum(transition_scores != float('-inf'), dim = 1)
+                # )
+
                 # generated_tokens
-                generated_tokens = outputs#.sequences
+                generated_tokens = outputs.sequences
                 generated_tokens = accelerator.gather_for_metrics(generated_tokens)
                 generated_tokens = generated_tokens.cpu().numpy()
 
@@ -859,8 +864,8 @@ def main():
                 logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
                 logger.info('Prediction : ')
                 logger.info(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
-                #logger.info('Probabilities : ')
-                #logger.info(probabilities)
+                # logger.info('Probabilities : ')
+                # logger.info(probabilities)
                 logger.info('Answer : ')
                 logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
 

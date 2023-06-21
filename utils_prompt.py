@@ -130,11 +130,81 @@ def preprocess_features_function(examples, args, raw_datasets, tokenizer):
         # examples[context_column] =  ['Read this and answer the question\n\n{}'.format(c.strip()) for c in examples[context_column]]
         # examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
 
-        # Read the following context and answer the question.\n\nContext: {d}\nQuestion: {q}\nAnswer:
+        if args.prompt_style == 'smcho_prompt':
+            # smcho
+            # # Read the following context and answer the question.\n\nContext: {d}\nQuestion: {q}\nAnswer:
+            # # Padding side determines if we do (question|context) or (context|question).
+            pad_on_right = tokenizer.padding_side == "left"#"right"
+            examples[context_column] =  ['Read the following context and answer the question.\n\nContext: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['\nQuestion: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'smcho_article_prompt':
+            # smcho
+            # # Read the following context and answer the question.\n\nContext: {d}\nQuestion: {q}\nAnswer:
+            # # Padding side determines if we do (question|context) or (context|question).
+            pad_on_right = tokenizer.padding_side == "left"#"right"
+            examples[context_column] =  ['Read the following article and answer the question.\n\nArticle: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['\nQuestion: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'smcho_article_reverse_prompt':
+            # smcho
+            # # Read the following context and answer the question.\n\nContext: {d}\nQuestion: {q}\nAnswer:
+            # # Padding side determines if we do (question|context) or (context|question).
+            pad_on_right = tokenizer.padding_side == "right"#"right"
+            examples[context_column] =  ['Read the following article and answer the question.\n\nArticle: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['\nQuestion: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'smcho_reverse_prompt':
+            # smcho
+            # # Read the following context and answer the question.\n\nContext: {d}\nQuestion: {q}\nAnswer:
+            # # Padding side determines if we do (question|context) or (context|question).
+            pad_on_right = tokenizer.padding_side == "right"#"right"
+            examples[context_column] =  ['Read the following context and answer the question.\n\nContext: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['\nQuestion: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'article_answer_prompt':
+            pad_on_right = tokenizer.padding_side == "left"#"right"
+            examples[context_column] =  ['Article: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['\n\nNow answer this question: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'article_answer_reverse_prompt':
+            pad_on_right = tokenizer.padding_side == "right"#"right"
+            examples[context_column] =  ['Article: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['\n\nAnswer this question: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'CQ_prompt':
+            pad_on_right = tokenizer.padding_side == "left"#"right"
+            examples[context_column] =  ['Context: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['Question: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'QC_prompt':
+            pad_on_right = tokenizer.padding_side == "right"#"right"
+            examples[context_column] =  ['Context: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['Question: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'cq_prompt':
+            pad_on_right = tokenizer.padding_side == "left"#"right"
+            examples[context_column] =  ['context: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['question: {}'.format(q.strip()) for q in examples[question_column]]
+
+        elif args.prompt_style == 'qc_prompt':
+            pad_on_right = tokenizer.padding_side == "right"#"right"
+            examples[context_column] =  ['context: {}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['question: {}'.format(q.strip()) for q in examples[question_column]]
+        
+        else:
+            # ("Read this and answer the question\n\n{context}\n\n{question}", "{answer}"),
+            # Padding side determines if we do (question|context) or (context|question).
+            pad_on_right = tokenizer.padding_side == "left"#"right"
+            examples[context_column] =  ['Read this and answer the question\n\n{}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
+
+        # ("Here is a question about this article: {context}\nWhat is the answer to this question: {question}", "{answer}"),
         # Padding side determines if we do (question|context) or (context|question).
-        pad_on_right = tokenizer.padding_side == "left"#"right"
-        examples[context_column] =  ['Read the following context and answer the question.\n\nContext: {}'.format(c.strip()) for c in examples[context_column]]
-        examples[question_column] = ['\nQuestion: {}'.format(q.strip()) for q in examples[question_column]]
+        # pad_on_right = tokenizer.padding_side == "left"#"right"
+        # examples[context_column] =  ['Here is a question about this article: {}'.format(c.strip()) for c in examples[context_column]]
+        # examples[question_column] = ['\nWhat is the answer to this question: {}'.format(q.strip()) for q in examples[question_column]]
+
 
 
     # Please answer a question about the following article. Question: {}\n Article:'

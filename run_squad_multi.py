@@ -754,7 +754,7 @@ def main():
                     # We keep track of the loss at each epoch
                     total_loss = total_loss + accelerator.gather(loss)
                     # total_loss = total_loss + loss.cpu().detach().float()
-                logger.info(tokenizer.batch_decode(accelerator.gather(batch["input_ids"][:1]), skip_special_tokens=True))
+                #logger.info(tokenizer.batch_decode(accelerator.gather(batch["input_ids"][:1]), skip_special_tokens=True))
                 #logger.info(tokenizer.batch_decode(batch["input_ids"][:1], skip_special_tokens=True))
 
                 # Checks if the accelerator has performed an optimization step behind the scenes
@@ -813,57 +813,34 @@ def main():
 
         #model.eval()
         lst_generated_tokens = []
-        with torch.no_grad():
+        if accelerator.is_main_process:
+            
             for i in range(0, args.mc_drop_num):
                 model.train()
-
-                outputs = accelerator.unwrap_model(model).generate(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
-                    **gen_kwargs,
-                    #return_dict_in_generate=True,
-                    #output_scores=True
-                )
-                # import pdb; pdb.set_trace()
-                # # calculate prob
-                # transition_scores = model.compute_transition_scores(
-                #     outputs.sequences, outputs.scores, normalize_logits=True
-                # )
-
-                # transition_scores = accelerator.gather_for_metrics(transition_scores)
-                # transition_scores = transition_scores.cpu()
-
-                # output_length = batch["input_ids"].shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
-                # probabilities = torch.exp(transition_scores.sum(axis=1) / (output_length))
-
-                # generated_tokens
-                generated_tokens = outputs#.sequences
-                generated_tokens = accelerator.gather_for_metrics(generated_tokens)
+                with torch.no_grad():
+                    outputs = accelerator.unwrap_model(model).generate(
+                        input_ids=batch["input_ids"],
+                        attention_mask=batch["attention_mask"],
+                        **gen_kwargs,
+                        #return_dict_in_generate=True,
+                        #output_scores=True
+                    )
+                
+                
+                generated_tokens = accelerator.gather(outputs)#.sequences
                 generated_tokens = generated_tokens.cpu().numpy()
+                #generated_tokens = accelerator.gather(generated_tokens)
+                #generated_tokens = generated_tokens
+
+
+                # generated_tokens = outputs
+                # generated_tokens = accelerator.gather_for_metrics(generated_tokens)
+                # generated_tokens = generated_tokens.cpu().numpy()
 
                 # input_length is the length of the input prompt for decoder-only models, like the GPT family, and 1 for
                 # encoder-decoder models, like BART or T5.
                 # delete bos token
-                # generated_tokens = generated_tokens[:, 1:] 
-                input_length = 1 if model.config.is_encoder_decoder else inputs.input_ids.shape[1]
-                generated_tokens = generated_tokens[:, input_length:]
-
-                # gold labels
-                gold_labels = batch['labels']
-                gold_labels = gold_labels.cpu().numpy()
-
-                if args.ignore_pad_token_for_loss:
-                    # Replace -100 in the labels as we can't decode them.
-                    gold_labels = np.where(gold_labels != -100, gold_labels, tokenizer.pad_token_id)
-                
-                logger.info('==========================================')
-                logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
-                logger.info('Prediction : ')
-                logger.info(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
-                #logger.info('Probabilities : ')
-                #logger.info(probabilities)
-                logger.info('Answer : ')
-                logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
+                generated_tokens = generated_tokens[:, 1:] 
 
                 # delete tokenizer.pad_token_id
                 generated_tokens = np.array([[(t if t != tokenizer.pad_token_id else -100) for t in tok] for tok in generated_tokens])
@@ -872,7 +849,9 @@ def main():
                     generated_tokens = generated_tokens[0]
 
                 lst_generated_tokens.append(generated_tokens)
-
+                print(generated_tokens)
+                #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         return lst_generated_tokens
 
     #
@@ -954,7 +933,7 @@ def main():
 
         logger.info('===================================')
         logger.info('Max votes preds : ')
-        logger.info(tokenizer.batch_decode(arr_max_vote_pred, skip_special_tokens=True))
+        logger.info(tokenizer.batch_decode(accelerator.gather(arr_max_vote_pred), skip_special_tokens=True))
         logger.info('Max votes num: ')
         logger.info( arr_num_max_vote_pred.tolist())
         logger.info('Max votes num / mc_drop_num: ')
@@ -1061,9 +1040,10 @@ def main():
 
     # Validation
     if args.do_eval:
-        logger.info("***** Running Validation *****")
-        logger.info(f"  Num examples = {len(eval_dataset)}")
-        logger.info(f"  Batch size = {args.per_device_eval_batch_size}")
+        with accelerator.main_process_first():
+            logger.info("***** Running Validation *****")
+            logger.info(f"  Num examples = {len(eval_dataset)}")
+            logger.info(f"  Batch size = {args.per_device_eval_batch_size}")
 
         if args.val_max_answer_length is None:
             args.val_max_answer_length = args.max_answer_length
@@ -1091,42 +1071,44 @@ def main():
                 lst_all_gold_labels.append([gold_labels])
                 
                 # mc drop
-                lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
-
+                if accelerator.is_main_process:
+                    lst_mc_generated_tokens = run_mc_drop(model, tokenizer, batch, gen_kwargs, args)
+                # import pdb; pdb.set_trace()
                 # make array with MC drop results
                 # (mc_drop_num, batch size, seq_len)
-                arr_mc_generated_tokens = convert_to_arr(lst_mc_generated_tokens, args)
-                #import pdb; pdb.set_trace()
-
-                # prepare soft_label batches
-                lst_mc_preds_batch = []
-                for arr_mc_generated_token in arr_mc_generated_tokens:
-                    if args.do_soft_label:
-                        all_pred_label = torch.tensor(arr_mc_generated_token).to(device)
-                    else:
-                        all_pred_label = torch.tensor(arr_mc_generated_token)
-                    lst_mc_preds_batch.append(all_pred_label)
-                    
-                lst_batch_with_all_pred_labels.append(lst_mc_preds_batch)
-                # import pdb; pdb.set_trace()
-
-                # majority vote for the best pred & its vote num
-                best_pred_label, proportion_best_pred_label = run_majority_vote(tokenizer, arr_mc_generated_tokens, args)
+                if accelerator.is_main_process:
+                    arr_mc_generated_tokens = convert_to_arr(lst_mc_generated_tokens, args)
                 
+                if accelerator.is_main_process:
+                    # prepare soft_label batches
+                    lst_mc_preds_batch = []
+                    for arr_mc_generated_token in arr_mc_generated_tokens:
+                        if args.do_soft_label:
+                            all_pred_label = torch.tensor(arr_mc_generated_token).to(device)
+                        else:
+                            all_pred_label = torch.tensor(arr_mc_generated_token)
+                        lst_mc_preds_batch.append(all_pred_label)
+                        
+                    lst_batch_with_all_pred_labels.append(lst_mc_preds_batch)
+                    # import pdb; pdb.set_trace()
 
-                batch_size = len(batch['input_ids'])
-                for filtered_idx in range(batch_size):
-                    if proportion_best_pred_label[filtered_idx] >= args.filter_thres:
-                        #import pdb; pdb.set_trace()
-                        lst_filtered_input_ids.append(batch['input_ids'][filtered_idx])
-                        lst_filtered_labels.append(best_pred_label[filtered_idx])
+                    # majority vote for the best pred & its vote num
+                    best_pred_label, proportion_best_pred_label = run_majority_vote(tokenizer, arr_mc_generated_tokens, args)
+                    
 
-                # TODO 나중에 지우기..
-                # update batch labels to the best predicted labels
-                best_pred_batch = copy.deepcopy(batch)
-                best_pred_batch['labels'] = best_pred_label
-                best_pred_batch['proportion_best_pred_labels'] = proportion_best_pred_label
-                lst_batch_with_best_pred_labels.append(best_pred_batch)
+                    batch_size = len(batch['input_ids'])
+                    for filtered_idx in range(batch_size):
+                        if proportion_best_pred_label[filtered_idx] >= args.filter_thres:
+                            #import pdb; pdb.set_trace()
+                            lst_filtered_input_ids.append(batch['input_ids'][filtered_idx])
+                            lst_filtered_labels.append(best_pred_label[filtered_idx])
+
+                    # TODO 나중에 지우기..
+                    # update batch labels to the best predicted labels
+                    best_pred_batch = copy.deepcopy(batch)
+                    best_pred_batch['labels'] = best_pred_label
+                    best_pred_batch['proportion_best_pred_labels'] = proportion_best_pred_label
+                    lst_batch_with_best_pred_labels.append(best_pred_batch)
                             
             assert len(lst_filtered_input_ids) == len(lst_filtered_labels)
             filtered_test_time_tuning_examples['input_ids'] = lst_filtered_input_ids
@@ -1158,8 +1140,9 @@ def main():
             # test_time_tuning
             # soft label
             if args.do_soft_label:
-                logger.info("***** Running Test-time tuning *****")
-                logger.info(f"  Num examples = {len(test_time_tuning_dataset)}")
+                with accelerator.main_process_first():
+                    logger.info("***** Running Test-time tuning *****")
+                    logger.info(f"  Num examples = {len(test_time_tuning_dataset)}")
 
                 #import pdb; pdb.set_trace()
                 args.max_test_time_train_steps, args.test_time_tuning_epoch, lr_scheduler_test_time_tuning = prepare_scheduler(args, accelerator, test_time_tuning_dataloader, optimizer, args.max_test_time_train_steps, args.test_time_tuning_epoch)
@@ -1169,8 +1152,9 @@ def main():
                 del test_time_tuning_dataloader
             # hard label
             else:
-                logger.info("***** Running Test-time tuning *****")
-                logger.info(f"  Num examples = {len(filtered_test_time_tuning_examples)}")
+                with accelerator.main_process_first():
+                    logger.info("***** Running Test-time tuning *****")
+                    logger.info(f"  Num examples = {len(filtered_test_time_tuning_examples)}")
                 test_time_tuning(args, model, tokenizer, filtered_test_time_tuning_dataloader)
                 del filtered_test_time_tuning_dataloader
                 del filtered_test_time_tuning_examples
@@ -1208,12 +1192,12 @@ def main():
                 if isinstance(generated_tokens, tuple):
                     generated_tokens = generated_tokens[0]
 
-                logger.info('==========================================')
-                logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=True))
-                logger.info('Prediction : ')
-                logger.info(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
-                logger.info('Answer : ')
-                logger.info(tokenizer.batch_decode(labels, skip_special_tokens=True))
+                #logger.info('==========================================')
+                #logger.info(tokenizer.batch_decode(accelerator.gather(batch["input_ids"]) , skip_special_tokens=True))
+                #logger.info('Prediction : ')
+                #logger.info(tokenizer.batch_decode(accelerator.gather(generated_tokens), skip_special_tokens=True))
+                #logger.info('Answer : ')
+                #logger.info(tokenizer.batch_decode(accelerator.gather(labels), skip_special_tokens=True))
 
 
         max_len = max([x.shape[1] for x in all_gen_tokens])  # Get the max_length of the tensor
@@ -1236,14 +1220,15 @@ def main():
 
         final_eval_results = {'final_em_score' : final_em_score, 'final_f1_score': final_f1_score}
 
-        logger.info(f"Evaluation metrics: {final_eval_results}")
+        with accelerator.main_process_first():
+            logger.info(f"Evaluation metrics: {final_eval_results}")
         print(final_eval_results)
 
         with open(os.path.join(args.output_dir, "final_eval_results.json"), "w") as f:
             json.dump(final_eval_results, f)
 
         #import pdb; pdb.set_trace()
-
+    
         if args.dataset_name is not None:
             # TODO) 나중에 지우기
             eval_metric = metric.compute(predictions=prediction_predictions, references=prediction_label_ids)

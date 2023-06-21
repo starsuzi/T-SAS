@@ -66,7 +66,7 @@ from peft import PeftModel, PeftConfig
 
 from torch.nn import CrossEntropyLoss
 
-from utils import *
+from utils_prompt import *
 
 
 
@@ -162,6 +162,7 @@ def parse_args():
         default='test',
         help="The name of the test column in the datasets.",
     )
+    parser.add_argument("--prompt_style", type=str)
     # cot
     parser.add_argument("--do_cot", action="store_true")
     # peft
@@ -828,7 +829,7 @@ def main():
                 return_dict_in_generate=True,
                 output_scores=True,
                 top_k = 40,
-                temperature = 0.7,
+                temperature = 0.5,
                 num_return_sequences = args.mc_drop_num
             )
             
