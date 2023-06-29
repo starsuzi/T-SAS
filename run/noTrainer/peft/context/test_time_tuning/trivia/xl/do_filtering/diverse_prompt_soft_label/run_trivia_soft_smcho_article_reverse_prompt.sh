@@ -10,7 +10,7 @@ do
         OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/${PROMPT_STYPE}/soft_label/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
         mkdir -p ${OUTPUT_DIR}
 
-        CUDA_VISIBLE_DEVICES=5 python run_squad_prompt.py \
+        CUDA_VISIBLE_DEVICES=7 python run_squad_prompt.py \
             --prompt_style ${PROMPT_STYPE} \
             --model_name_or_path ${MODEL} \
             --validation_file ./data/trivia/preprocessed/trivia_dev.json \

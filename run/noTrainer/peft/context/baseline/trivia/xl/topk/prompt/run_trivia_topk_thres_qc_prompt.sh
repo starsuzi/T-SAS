@@ -13,7 +13,7 @@ do
             OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/topk/model/${MODEL}/filter_thres/${FILTER_THRES}/${PROMPT_STYPE}/lora/topk_num/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=2 python run_squad_topk.py \
+            CUDA_VISIBLE_DEVICES=1 python run_squad_topk.py \
                 --prompt_style ${PROMPT_STYPE} \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \

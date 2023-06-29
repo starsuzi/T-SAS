@@ -7,7 +7,7 @@ OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/${PROMPT_ST
 mkdir -p ${OUTPUT_DIR}
 
 
-CUDA_VISIBLE_DEVICES=4 python run_squad_prompt.py \
+CUDA_VISIBLE_DEVICES=3 python run_squad_prompt.py \
     --prompt_style ${PROMPT_STYPE} \
     --model_name_or_path ${MODEL} \
     --validation_file /data/syjeong/prompt_test/data/trivia/preprocessed/trivia_dev.json \

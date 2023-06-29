@@ -1,6 +1,3 @@
-#bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/sciq/large/do_filtering/instance/run_sciq_instance_filter_no_lora.sh
-# bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/nq/large/do_filtering/instance/run_nq_instance_filter_no_lora.sh
-# bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/squad_dpr/large/do_filtering/instance/run_squad_dpr_instance_filter_no_lora.sh
-# bash /data/syjeong/prompt_test/run/gpu7_base.sh
-bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/squad_dpr/xl/do_filtering/instance/run_squad_dpr_instance_filter.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/greedy/diverse_prompt/run_trivia_greedy_smcho_article_prompt.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/greedy/diverse_prompt/run_trivia_greedy_smcho_prompt.sh
 CUDA_VISIBLE_DEVICES=7 bash /data/syjeong/prompt_test/run/run.sh

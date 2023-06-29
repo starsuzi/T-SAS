@@ -50,8 +50,8 @@ x1 = [ 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] #, 0.9
 df=pd.DataFrame({'x_values': x1, 'T-SAS w/ MC.': mc, 'T-SAS w/ Top-$K$':topk})
 
 # multiple line plots
-plt.plot( 'x_values', 'T-SAS w/ MC.', "b*--", alpha=0.6, linewidth=3, markersize=10, data=df)
-plt.plot( 'x_values', 'T-SAS w/ Top-$K$', "r^--", alpha=0.6, linewidth=3, markersize=10, data=df)
+plt.plot( 'x_values', 'T-SAS w/ MC.', "bo--",  linewidth=2, markersize=9, data=df)
+plt.plot( 'x_values', 'T-SAS w/ Top-$K$', "ro--", linewidth=2, markersize=9, data=df)
 #plt.plot( 'x_values', 'All Pred.', "orange", marker='', alpha=0.6, linewidth=3, markersize=10, data=df)
 
 #plt.plot( 'x_values', 'y3_values', data=df, marker='', color='olive', linewidth=2, linestyle='dashed', label="toto")

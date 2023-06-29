@@ -1,2 +1,1 @@
-bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/mmlu/base/subcategory/do_filtering/run_mmlu_hard.sh
-bash /data/syjeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/mmlu/base/subcategory/do_filtering/run_mmlu_soft.sh
+bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/greedy/diverse_prompt/run_trivia_greedy_article_answer_prompt.sh

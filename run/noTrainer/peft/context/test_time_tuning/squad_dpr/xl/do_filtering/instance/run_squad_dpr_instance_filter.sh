@@ -4,14 +4,14 @@ DATASET_NAME=squad_dpr
 
 for MC_DROP_NUM in 15 # 5 7 10 15
 do
-    for EPOCH in 5
+    for EPOCH in 7 10
     do
-        for FILTER_THRES in 0.7 0.6 0.3
+        for FILTER_THRES in 0.7 0.5 
         do
             OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/filter_thres/${FILTER_THRES}/orig_prompt/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=7 python run_squad.py \
+            CUDA_VISIBLE_DEVICES=2 python run_squad.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
                 --validation_file ./data/squad_dpr/preprocessed/squad_dpr_dev.json \
