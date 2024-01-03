@@ -199,6 +199,14 @@ def preprocess_features_function(examples, args, raw_datasets, tokenizer):
             examples[context_column] =  ['Read this and answer the question\n\n{}'.format(c.strip()) for c in examples[context_column]]
             examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
 
+        elif args.prompt_style == 'jh_prompt':
+            # ("Read this and answer the question\n\n{context}\n\n{question}", "{answer}"),
+            # Padding side determines if we do (question|context) or (context|question).
+            pad_on_right = tokenizer.padding_side == "left"#"right"
+            # Read this and answer the question:“, _context.lstrip(), “\nQuestion:“, _question.lstrip(), “?\nAnswer:
+            examples[context_column] =  ['Read this and answer the question:{}'.format(c.strip()) for c in examples[context_column]]
+            examples[question_column] = ['\nQuestion:{}?\nAnswer:'.format(q.strip()) for q in examples[question_column]]
+
         else:
             # ("Read this and answer the question\n\n{context}\n\n{question}", "{answer}"),
             # Padding side determines if we do (question|context) or (context|question).

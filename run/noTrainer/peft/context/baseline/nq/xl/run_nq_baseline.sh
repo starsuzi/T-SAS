@@ -6,9 +6,9 @@ OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/orig_prompt
 mkdir -p ${OUTPUT_DIR}
 
 
-CUDA_VISIBLE_DEVICES=7 python run_squad.py \
+CUDA_VISIBLE_DEVICES=0 python run_squad.py \
     --model_name_or_path ${MODEL} \
-    --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \
+    --validation_file /data/soyeong/prompt_test/data/nq/preprocessed/nq_dev.json \
     --question_column question \
     --answer_column answers \
     --context_column context \

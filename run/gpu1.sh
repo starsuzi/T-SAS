@@ -1,1 +1,3 @@
-bash /data/syjeong/prompt_test/run/noTrainer/peft/context/baseline/trivia/xl/greedy/diverse_prompt/run_trivia_greedy_article_answer_reverse_prompt.sh
+bash /data/soyeong/prompt_test/run/noTrainer/peft/context/test_time_tuning/cpgqa/base/do_filtering/run_cpgqa_instance_filter_no_lora_sqd.sh
+
+CUDA_VISIBLE_DEVICES=1 bash /data/soyeong/prompt_test/run/run.sh

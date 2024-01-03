@@ -11,10 +11,10 @@ do
             OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/topk/model/${MODEL}/filter_thres/${FILTER_THRES}/orig_prompt/lora/topk_num/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=6 python run_squad_topk.py \
+            CUDA_VISIBLE_DEVICES=0 python run_squad_topk.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
-                --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \
+                --validation_file /data/soyeong/prompt_test/data/nq/preprocessed/nq_dev.json \
                 --question_column question \
                 --answer_column answers \
                 --context_column context \
@@ -22,7 +22,7 @@ do
                 --max_seq_length 384 \
                 --doc_stride 128 \
                 --per_device_topk_batch_size 1 \
-                --per_device_eval_batch_size 2 \
+                --per_device_eval_batch_size 6 \
                 --output_dir ${OUTPUT_DIR} \
                 --overwrite_cache \
                 --train_peft_model \

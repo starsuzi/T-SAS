@@ -23,7 +23,7 @@ import json
 import logging
 import math
 import os
-os.environ['TRANSFORMERS_CACHE'] = '/data/syjeong/cache'
+os.environ['TRANSFORMERS_CACHE'] = '/data/soyeong/cache'
 import random
 from pathlib import Path
 from typing import List, Optional, Tuple

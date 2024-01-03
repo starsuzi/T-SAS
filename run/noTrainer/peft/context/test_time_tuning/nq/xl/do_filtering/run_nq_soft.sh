@@ -9,9 +9,9 @@ do
         OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/orig_prompt/soft_label/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
         mkdir -p ${OUTPUT_DIR}
 
-        CUDA_VISIBLE_DEVICES=3 python run_squad.py \
+        CUDA_VISIBLE_DEVICES=0 python run_squad.py \
             --model_name_or_path ${MODEL} \
-            --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \
+            --validation_file ./data/nq/preprocessed/nq_dev.json \
             --do_soft_label \
             --question_column question \
             --answer_column answers \
@@ -19,7 +19,7 @@ do
             --learning_rate 3e-5 \
             --max_seq_length 384 \
             --doc_stride 128 \
-            --per_device_eval_batch_size 12 \
+            --per_device_eval_batch_size 6 \
             --output_dir ${OUTPUT_DIR} \
             --overwrite_cache \
             --train_peft_model \

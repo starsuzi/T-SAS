@@ -16,7 +16,7 @@ from tqdm import tqdm
 lst_dict_final = []
 example_id = 0
 
-with open('/data/syjeong/prompt_test/data/nq/original/dpr/biencoder-nq-train.json', 'r') as input_file:
+with open('./data/nq/original/dpr/biencoder-nq-train.json', 'r') as input_file:
     json_data = json.load(input_file)
     print(len(json_data))
 
@@ -56,7 +56,7 @@ with open('/data/syjeong/prompt_test/data/nq/original/dpr/biencoder-nq-train.jso
         lst_dict_final.append(dict_final)
 
         
-with open("/data/syjeong/prompt_test/data/nq/preprocessed/nq_train.json", "w") as output_file:
+with open("/data/soyeong/prompt_test/data/nq/preprocessed/nq_train.json", "w") as output_file:
     json.dump(lst_dict_final, output_file, indent=4, sort_keys=True)
 
 print(len(lst_dict_final))

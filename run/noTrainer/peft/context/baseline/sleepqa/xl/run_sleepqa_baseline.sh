@@ -6,7 +6,7 @@ OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/orig_prompt
 mkdir -p ${OUTPUT_DIR}
 
 
-CUDA_VISIBLE_DEVICES=3 python run_squad.py \
+CUDA_VISIBLE_DEVICES=0 python run_squad.py \
     --model_name_or_path ${MODEL} \
     --validation_file ./data/sleepqa/preprocessed/sleepqa_test.json \
     --question_column question \

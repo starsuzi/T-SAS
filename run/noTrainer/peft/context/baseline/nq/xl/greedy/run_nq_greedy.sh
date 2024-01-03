@@ -12,7 +12,7 @@ do
             OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/greedy/model/${MODEL}/${PROMPT_STYPE}/lora/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=5 python run_squad_prompt_greedy.py \
+            CUDA_VISIBLE_DEVICES=1 python run_squad_prompt_greedy.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
                 --validation_file ./data/nq/preprocessed/nq_dev.json \
@@ -22,7 +22,7 @@ do
                 --learning_rate 3e-5 \
                 --max_seq_length 384 \
                 --doc_stride 128 \
-                --per_device_eval_batch_size 12 \
+                --per_device_eval_batch_size 6 \
                 --output_dir ${OUTPUT_DIR} \
                 --overwrite_cache \
                 --train_peft_model \

@@ -2,16 +2,16 @@ DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-base
 DATASET_NAME=squad_dpr
 
-for EPOCH in 1
+for EPOCH in 1 2
 do
 
-    OUTPUT_DIR=./outputs/${DATASET_NAME}/context/train/model/${MODEL}/no_lora/orig_prompt/lora/epoch/${EPOCH}/${DATE}
+    OUTPUT_DIR=./outputs/${DATASET_NAME}/context/train/model/${MODEL}/no_lora/orig_prompt/epoch/${EPOCH}/${DATE}
     mkdir -p ${OUTPUT_DIR}
 
-    CUDA_VISIBLE_DEVICES=3 python run_squad.py \
+    CUDA_VISIBLE_DEVICES=0 python run_squad.py \
         --model_name_or_path ${MODEL} \
-        --validation_file /data/syjeong/prompt_test/data/squad_dpr/preprocessed/squad_dpr_dev.json \
-        --train_file /data/syjeong/prompt_test/data/squad_dpr/preprocessed/squad_dpr_train.json \
+        --validation_file ./data/squad_dpr/preprocessed/squad_dpr_dev.json \
+        --train_file ./data/squad_dpr/preprocessed/squad_dpr_train.json \
         --answer_column answers \
         --context_column context \
         --learning_rate 3e-5 \
@@ -24,7 +24,7 @@ do
         --do_eval \
         --do_train \
         --num_train_epochs ${EPOCH} \
-        --per_device_train_batch_size 24
+        --per_device_train_batch_size 12
 done
 
 

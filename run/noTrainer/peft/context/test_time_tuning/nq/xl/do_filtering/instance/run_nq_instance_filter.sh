@@ -6,22 +6,22 @@ for MC_DROP_NUM in 15
 do
     for EPOCH in 3
     do
-        for FILTER_THRES in 0.2 0.4 0.6 0.7 0.8 0.9 0.1
+        for FILTER_THRES in 0.6 #0.2 0.4 0.6 0.7 0.8 0.9 0.1
         do
             OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/filter_thres/${FILTER_THRES}/orig_prompt/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
-            CUDA_VISIBLE_DEVICES=7 python run_squad.py \
+            CUDA_VISIBLE_DEVICES=0 python run_squad.py \
                 --filter_thres ${FILTER_THRES} \
                 --model_name_or_path ${MODEL} \
-                --validation_file /data/syjeong/prompt_test/data/nq/preprocessed/nq_dev.json \
+                --validation_file /data/soyeong/prompt_test/data/nq/preprocessed/nq_dev.json \
                 --question_column question \
                 --answer_column answers \
                 --context_column context \
                 --learning_rate 3e-5 \
                 --max_seq_length 384 \
                 --doc_stride 128 \
-                --per_device_eval_batch_size 12 \
+                --per_device_eval_batch_size 6 \
                 --output_dir ${OUTPUT_DIR} \
                 --overwrite_cache \
                 --train_peft_model \

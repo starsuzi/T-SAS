@@ -19,7 +19,7 @@ def run_nested_loop(lst_context, lst_answer, example_id, lst_dict_final) :
             if ans in ctx:
                 first_selected_answer =[data['answers'][a_idx]]
 
-                dict_final['answers'] = {'text' : first_selected_answer + data['answers']}
+                dict_final['answers'] = {'text' :  data['answers']}
                 dict_final['context'] = data['ctxs'][c_idx]['text'].lower()
                 dict_final['id'] = str(example_id)
                 dict_final['question'] = data['question'].lower()
@@ -36,7 +36,7 @@ def run_nested_loop(lst_context, lst_answer, example_id, lst_dict_final) :
 lst_dict_final = []
 example_id = 0
 
-with open('./data/sleepqa/original/dpr/sleep-test.json', 'r') as input_file:
+with open('./data/sleepqa/original/sleep-test.json', 'r') as input_file:
     json_data = json.load(input_file)
     print(len(json_data))
 

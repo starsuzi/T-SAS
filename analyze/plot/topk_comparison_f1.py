@@ -61,8 +61,8 @@ plt.xticks()
 plt.yticks()
 
 plt.xlabel("Filter Threshold", fontsize=20)
-plt.ylabel("F1", fontsize=20)
-plt.legend(loc="lower right", fontsize=16, prop={'size': 9},)
+plt.ylabel("F1", fontsize=16)
+plt.legend(loc="lower right", fontsize=16, prop={'size': 11},)
 
 
 plt.ylim([67, 75])
@@ -70,5 +70,5 @@ plt.gca().yaxis.set_ticks([67, 69, 71, 73, 75])
 plt.gca().xaxis.set_ticks(x1)
 
 
-plt.savefig("/data/syjeong/prompt_test/analyze/plot/plot_outputs/topk_comparison_f1.pdf", dpi=300, bbox_inches="tight", pad_inches=0)
-plt.savefig("/data/syjeong/prompt_test/analyze/plot/plot_outputs/topk_comparison_f1.png", dpi=300, bbox_inches="tight", pad_inches=0)
+plt.savefig("/data/soyeong/prompt_test/analyze/plot/plot_outputs/topk_comparison_f1.pdf", dpi=300, bbox_inches="tight", pad_inches=0)
+plt.savefig("/data/soyeong/prompt_test/analyze/plot/plot_outputs/topk_comparison_f1.png", dpi=300, bbox_inches="tight", pad_inches=0)

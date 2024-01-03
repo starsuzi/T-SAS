@@ -35,7 +35,7 @@ def run_nested_loop(lst_context, lst_answer, example_id, lst_dict_final) :
 lst_dict_final = []
 example_id = 0
 
-with open('/data/syjeong/prompt_test/data/squad_dpr/original/dpr/biencoder-squad1-train.json', 'r') as input_file:
+with open('./data/squad_dpr/original/dpr/biencoder-squad1-train.json', 'r') as input_file:
     json_data = json.load(input_file)
     print(len(json_data))
 

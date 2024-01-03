@@ -1,0 +1,64 @@
+import json
+import datasets
+
+# {
+#     "answers": {
+#         "answer_start": [1],
+#         "text": ["This is a test text"]
+#     },
+#     "context": "This is a test context.",
+#     "id": "1",
+#     "question": "Is this a test?",
+#     "title": "train test"
+# }
+
+def run_nested_loop(lst_context, lst_answer, example_id, lst_dict_final) :
+    dict_final = {}
+    for c_idx, ctx in enumerate(lst_context):
+        for a_idx, ans in enumerate(lst_answer):
+            if ans in ctx:
+                first_selected_answer =[data['answers'][a_idx]]
+                #import pdb; pdb.set_trace()
+
+                dict_final['answers'] = {'text' : first_selected_answer + data['answers']}
+                dict_final['context'] = lst_context[c_idx].lower()
+                dict_final['id'] = str(example_id)
+                dict_final['question'] = data['paragraphs'][0]['qas'][0]['question'].lower()
+                dict_final['title'] =  data['title'].lower()
+                dict_final['c_idx'] = c_idx
+                dict_final['a_idx'] = a_idx
+
+                lst_dict_final.append(dict_final)
+                #import pdb; pdb.set_trace()
+
+
+                return
+
+lst_dict_final = []
+example_id = 0
+
+with open('./data/tydiqa/original/tydiqa-goldp-v1.1-dev.json', 'r') as input_file:
+    json_data = json.load(input_file)
+    
+    print(len(json_data['data']))
+
+    for data in json_data['data']:
+        if 'english' in data['paragraphs'][0]['qas'][0]['id']:
+            #import pdb; pdb.set_trace()
+            data['answers'] = [i['text'].lower() for i in data['paragraphs'][0]['qas'][0]['answers']]
+            lst_answer = [a for a in data['answers']]
+            lst_context = [data['paragraphs'][0]['context'].lower()]
+            # data['positive_ctxs'][0]['text'] = data['positive_ctxs'][0]['text'].lower()
+            
+            
+            run_nested_loop(lst_context, lst_answer, example_id, lst_dict_final)
+
+            example_id = example_id + 1
+
+        #import pdb; pdb.set_trace()
+        
+with open("./data/tydiqa/preprocessed/tydiqa_dev.json", "w") as output_file:
+    json.dump(lst_dict_final, output_file, indent=4, sort_keys=True)
+
+
+print(len(lst_dict_final))

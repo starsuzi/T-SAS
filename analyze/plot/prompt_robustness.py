@@ -8,8 +8,10 @@ from matplotlib import pyplot as plt
 plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.serif'] = ['Times New Roman'] + plt.rcParams['font.serif']
 
+
 matplotlib.rc("font", size=14)
-fig = plt.figure(figsize=(3, 2.5))
+
+plt.figure(figsize = (4.5,2.5))
 
 width = 0.05
 
@@ -88,10 +90,10 @@ ax.yaxis.set_ticks([65, 70, 75, 80, 85])
 ax.legend(
     (rects1[0], rects2[0], rects3[0], rects4[0], rects5[0]), 
     ('Naïve LM', 'w/ Greedy', 'w/ Soft', 'w/ LMSI', 'T-SAS (Ours)'), 
-    prop={'size': 9}, loc='lower right', handletextpad=0.1, 
+    prop={'size': 11}, loc='lower right', handletextpad=0.1, 
     labelspacing=0.01, framealpha=0.5, borderpad=0.01, ncol=1,fontsize=16
     #bbox_to_anchor=(-0.01, 1.02), loc='upper right'
 )
 
-plt.savefig("/data/syjeong/prompt_test/analyze/plot/plot_outputs/prompt_robustness.pdf", dpi=300, bbox_inches="tight", pad_inches=0)
-plt.savefig("/data/syjeong/prompt_test/analyze/plot/plot_outputs/prompt_robustness.png", dpi=300, bbox_inches="tight", pad_inches=0)
+plt.savefig("/data/soyeong/prompt_test/analyze/plot/plot_outputs/prompt_robustness.pdf", dpi=300, bbox_inches="tight", pad_inches=0)
+plt.savefig("/data/soyeong/prompt_test/analyze/plot/plot_outputs/prompt_robustness.png", dpi=300, bbox_inches="tight", pad_inches=0)
