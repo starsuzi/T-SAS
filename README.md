@@ -5,7 +5,7 @@ Official Code Repository for the paper "Test-Time Self-Adaptive Small Language M
 ## Abstract
 
 <div align="center">
-  <img alt="T-SAS Overview" src="./images/tsas.png" width="400px">
+  <img alt="T-SAS Overview" src="./images/tsas.png" width="800px">
 </div>
 
 
