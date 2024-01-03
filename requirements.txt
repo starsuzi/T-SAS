@@ -6,3 +6,5 @@ evaluate
 nltk
 transformers >= 4.0
 peft
+fsspec==2023.9.2
+pip install Jinja2

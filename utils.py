@@ -1,4 +1,6 @@
 import torch
+import logging
+
 import transformers
 from transformers import (
     CONFIG_MAPPING,
@@ -14,12 +16,15 @@ import datasets
 import numpy as np
 import math
 
+
 from transformers.trainer_utils import EvalLoopOutput, EvalPrediction, get_last_checkpoint
 
 
 # TODO: peft
 from peft import get_peft_config, get_peft_model, get_peft_model_state_dict, LoraConfig, TaskType
 from peft import PeftModel, PeftConfig
+
+logger = logging.getLogger(__name__)
 
 
 def load_model(args):
@@ -77,7 +82,6 @@ def load_model(args):
 def preprocess_dataset(args, raw_datasets):
     # Preprocessing the datasets.
     # First we tokenize all the texts.
-    #column_names = raw_datasets["train"].column_names
     column_names = raw_datasets[args.val_column].column_names
     
     # Get the column names for input/target.
@@ -112,32 +116,16 @@ def preprocess_features_function(examples, args, raw_datasets, tokenizer):
     max_seq_length = min(args.max_seq_length, tokenizer.model_max_length)
 
 
-
     # Some of the questions have lots of whitespace on the left, which is not useful and will make the
     # truncation of the context fail (the tokenized question will take a lots of space). So we remove that
     # left whitespace
     
-    if args.do_cot:
-        pad_on_right = tokenizer.padding_side == "left"#"right"
-        examples[context_column] =  ["Let's think step by step. Read this and answer the question\n\n{}".format(c.strip()) for c in examples[context_column]]
-        examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
-
-
-    else:
-        # ("Read this and answer the question\n\n{context}\n\n{question}", "{answer}"),
-        # Padding side determines if we do (question|context) or (context|question).
-        pad_on_right = tokenizer.padding_side == "left"#"right"
-        examples[context_column] =  ['Read this and answer the question\n\n{}'.format(c.strip()) for c in examples[context_column]]
-        examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
- 
-
-    # Please answer a question about the following article. Question: {}\n Article:'
+    # ("Read this and answer the question\n\n{context}\n\n{question}", "{answer}"),
     # Padding side determines if we do (question|context) or (context|question).
-    # pad_on_right = tokenizer.padding_side == "right"
-    # examples[question_column] =  ['Please answer a question about the following article. Question: {}\n Article:'.format(q.lstrip()) for q in examples[question_column]] #[q.lstrip() for q in examples[question_column]]
+    pad_on_right = tokenizer.padding_side == "left"
+    examples[context_column] =  ['Read this and answer the question\n\n{}'.format(c.strip()) for c in examples[context_column]]
+    examples[question_column] = ['\n\n{}'.format(q.strip()) for q in examples[question_column]]
 
-
-    
 
     # Tokenize our examples with truncation and maybe padding, but keep the overflows using a stride. This results
     # in one example possible giving several features when a context is long, each of those features having a
@@ -153,12 +141,7 @@ def preprocess_features_function(examples, args, raw_datasets, tokenizer):
         padding=padding,
     )   
 
-    if args.dataset_name == 'sciq':
-        targets = examples[answer_column]
-    elif args.dataset_name == 'covid_qa_deepset':
-        targets = [answer["text"][0] if len(answer["text"]) > 0 else "" for answer in examples[answer_column]]
-    else:
-        targets = [answer["text"][0] if len(answer["text"]) > 0 else "" for answer in examples[answer_column]]
+    targets = [answer["text"][0] if len(answer["text"]) > 0 else "" for answer in examples[answer_column]]
 
     # Tokenize targets with the `text_target` keyword argument
     labels = tokenizer(text_target=targets, max_length=max_answer_length, padding=padding, truncation=True)
@@ -180,8 +163,6 @@ def preprocess_features_function(examples, args, raw_datasets, tokenizer):
     # Augment the overflowing tokens to the labels
     labels_out = []
 
-    #import pdb; pdb.set_trace()
-
     for i in range(len(model_inputs["input_ids"])):
         # One example can give several spans, this is the index of the example containing this span of text.
         sample_index = sample_mapping[i]
@@ -189,7 +170,7 @@ def preprocess_features_function(examples, args, raw_datasets, tokenizer):
         labels_out.append(labels["input_ids"][sample_index])
 
     model_inputs["labels"] = labels_out
-    # tokenizer.batch_decode(model_inputs["input_ids"])[0]
+
     return model_inputs
 
 
@@ -203,22 +184,17 @@ def post_processing_function(
         preds = preds[0]
     # Replace -100s used for padding as we can't decode them
     preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
-    #labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
     
     decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-    #import pdb; pdb.set_trace()
     # Build a map example to its corresponding features.
     example_id_to_index = {k: i for i, k in enumerate(examples["id"])}
     feature_per_example = {example_id_to_index[feature["example_id"]]: i for i, feature in enumerate(features)}
     predictions = {}
     # Let's loop over all the examples!
-    #import pdb; pdb.set_trace()
     for example_index, example in enumerate(examples):
         # This is the index of the feature associated to the current example.
-        #import pdb; pdb.set_trace()
         feature_index = feature_per_example[example_index]
         predictions[example["id"]] = decoded_preds[feature_index]
-        #import pdb; pdb.set_trace()
 
     # Format the result to the format the metric expects.
     if args.version_2_with_negative:
@@ -228,12 +204,8 @@ def post_processing_function(
     else:
         formatted_predictions = [{"id": k if type(k) == str else str(k), "prediction_text": v} for k, v in predictions.items()]
 
-    if args.dataset_name == 'sciq':
-        _, _, answer_column = preprocess_dataset(args, raw_datasets)
-        references = [{"id": ex["id"], "answers": {'text': [ex[answer_column]], 'answer_start': []}} for ex in examples]
-    else:
-        _, _, answer_column = preprocess_dataset(args, raw_datasets)
-        references = [{"id": ex["id"] if type(ex["id"]) == str else str(ex["id"]), "answers": ex[answer_column] if ex[answer_column]['text'] != [] else {'text': [''], 'answer_start': []}} for ex in examples]
+    _, _, answer_column = preprocess_dataset(args, raw_datasets)
+    references = [{"id": ex["id"] if type(ex["id"]) == str else str(ex["id"]), "answers": ex[answer_column] if ex[answer_column]['text'] != [] else {'text': [''], 'answer_start': []}} for ex in examples]
 
     return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
@@ -258,7 +230,6 @@ def create_and_fill_np_array(all_gen_tokens, dataset, max_len):
     for i, gen_tok in enumerate(all_gen_tokens):  # populate columns
         # We have to fill it such that we have to take the whole tensor and replace it on the newly created array
         # And after every iteration we have to change the step
-        #import pdb; pdb.set_trace()
         batch_size = gen_tok.shape[0]
         cols = gen_tok.shape[1]
 
@@ -300,6 +271,182 @@ def prepare_scheduler(args, accelerator, dataloader, optimizer, max_train_steps,
     train_epoch = math.ceil(max_train_steps / num_update_steps_per_epoch)
 
     return max_train_steps, train_epoch, lr_scheduler
+
+
+# MC-drop
+def run_mc_drop(model, accelerator, tokenizer, batch, gen_kwargs, args):
+    logger.info("***** Running MC Drop *****")
+    logger.info(f"  Batch size = {args.per_device_eval_batch_size}")
+
+    lst_generated_tokens = []
+    with torch.no_grad():
+        for i in range(0, args.mc_drop_num):
+            model.train()
+
+            outputs = accelerator.unwrap_model(model).generate(
+                input_ids=batch["input_ids"],
+                attention_mask=batch["attention_mask"],
+                **gen_kwargs,
+                return_dict_in_generate=True,
+                output_scores=True
+            )
+            
+            # generated_tokens
+            generated_tokens = outputs.sequences
+            generated_tokens = accelerator.gather_for_metrics(generated_tokens)
+            generated_tokens = generated_tokens.cpu().numpy()
+
+            input_length = 1 if model.config.is_encoder_decoder else inputs.input_ids.shape[1]
+            generated_tokens = generated_tokens[:, input_length:]
+
+            # gold labels
+            gold_labels = batch['labels']
+            gold_labels = gold_labels.cpu().numpy()
+
+            if args.ignore_pad_token_for_loss:
+                # Replace -100 in the labels as we can't decode them.
+                gold_labels = np.where(gold_labels != -100, gold_labels, tokenizer.pad_token_id)
+            
+            logger.info('==========================================')
+            logger.info(tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=False))
+            logger.info('Prediction : ')
+            logger.info(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
+            logger.info('Answer : ')
+            logger.info(tokenizer.batch_decode(gold_labels, skip_special_tokens=True))
+
+            # delete tokenizer.pad_token_id
+            generated_tokens = np.array([[(t if t != tokenizer.pad_token_id else -100) for t in tok] for tok in generated_tokens])
+            
+            if isinstance(generated_tokens, tuple):
+                generated_tokens = generated_tokens[0]
+
+            lst_generated_tokens.append(generated_tokens)
+
+    # make array with MC drop results
+    # (mc_drop_num, batch size, seq_len)
+    arr_mc_generated_tokens = convert_to_arr(lst_generated_tokens, args)
+
+    return arr_mc_generated_tokens
+
+
+def convert_to_arr(lst_mc_generated_tokens, args):
+    mc_drop_num = args.mc_drop_num
+    batch_size = len(lst_mc_generated_tokens[0])
+
+    # find max seq length to make an array
+    max_seq_len = max([x.shape[1] for x in lst_mc_generated_tokens])
+    
+    lst_pad_mc_generated_tokens = []
+    for x in lst_mc_generated_tokens: 
+        # append if not requiring padding
+        if x.shape[1] == max_seq_len:
+            lst_pad_mc_generated_tokens.append(x)
+        # else pad the seq
+        else:
+            arr_pad_row_col = np.full((batch_size, max_seq_len), -100)
+            
+            if args.ignore_pad_token_for_loss:
+                arr_pad_row = np.full(max_seq_len - x.shape[1], -100)
+            else:
+                arr_pad_row = np.full(max_seq_len - x.shape[1], tokenizer.pad_token_id)
+
+            for i in range(batch_size):
+                arr_pad_row_col[i] = np.concatenate([x[i], arr_pad_row])
+            lst_pad_mc_generated_tokens.append(arr_pad_row_col)
+    
+    arr_mc_generated_tokens = np.array(lst_pad_mc_generated_tokens) # (mc_drop_num, batch size, seq_len)
+    return arr_mc_generated_tokens
+
+
+# Majority Voting
+def run_majority_vote(tokenizer, arr_mc_generated_tokens, args):
+    logger.info("***** Running Majority Vote *****")
+
+    mc_drop_num = args.mc_drop_num
+    batch_size = len(arr_mc_generated_tokens[0])
+    max_seq_len = len(arr_mc_generated_tokens[0][0])
+
+    arr_max_vote_pred = np.full((batch_size, max_seq_len), -100)
+    arr_num_max_vote_pred = np.full((batch_size, 1), -100)
+
+    for i in range(batch_size):
+        ith_batch_votes = arr_mc_generated_tokens[:, i, :]
+        lst_ith_batch_votes = ith_batch_votes.tolist()
+            # vote table
+        votes_table = {}
+
+        for vote in lst_ith_batch_votes:
+            tuple_vote = tuple(vote)
+            # check if key in table
+            if tuple_vote in votes_table:  
+                # increment counter  
+                votes_table[tuple_vote] += 1 
+            else:
+                # create counter for vote
+                votes_table[tuple_vote] = 1  
+        # find max pred
+        max_vote_pred = max(votes_table, key=votes_table.get)
+        arr_max_vote_pred[i] = max_vote_pred
+        # find max pred's vote
+        num_max_vote_pred = votes_table[max_vote_pred]
+        arr_num_max_vote_pred[i] = num_max_vote_pred
+
+    pred_label = torch.tensor(arr_max_vote_pred)
+    num_vote_pred_label = torch.tensor(arr_num_max_vote_pred)
+    
+    # proportion of the best vote num 
+    num_vote_pred_label = num_vote_pred_label / args.mc_drop_num
+
+    if args.ignore_pad_token_for_loss:
+        arr_max_vote_pred = np.where(arr_max_vote_pred != -100, arr_max_vote_pred, tokenizer.pad_token_id)
+
+    logger.info('===================================')
+    logger.info('Max votes preds : ')
+    logger.info(tokenizer.batch_decode(arr_max_vote_pred, skip_special_tokens=True))
+    logger.info('Max votes num: ')
+    logger.info( arr_num_max_vote_pred.tolist())
+    logger.info('Max votes num / mc_drop_num: ')
+    logger.info( num_vote_pred_label.tolist())
+
+    return pred_label, num_vote_pred_label
+
+
+def test_time_tuning(args, model, accelerator, optimizer, lr_scheduler_test_time_tuning, tokenizer, filtered_test_time_tuning_dataloader):
+    for epoch in range(0, args.test_time_tuning_epoch):
+        model.train()
+        total_loss = 0
+        for step, batch in enumerate(filtered_test_time_tuning_dataloader):
+            batch['decoder_input_ids'] = None
+            with accelerator.accumulate(model):
+                outputs = model(**batch)
+                loss = outputs.loss
+                accelerator.backward(loss)
+                optimizer.step()
+                lr_scheduler_test_time_tuning.step()
+                optimizer.zero_grad() 
+
+                # We keep track of the loss at each epoch
+                total_loss = total_loss + loss.cpu().detach().float()
+
+        logger.info("Epoch %d Loss:{} ".format(total_loss / len(filtered_test_time_tuning_dataloader)), epoch) 
+
+        # save chenkpoint
+        if args.checkpointing_steps == "epoch":
+            output_dir = f"epoch_{epoch}"
+            if args.output_dir is not None:
+                output_dir = os.path.join(args.output_dir, output_dir)
+            accelerator.save_state(output_dir)
+
+        if args.output_dir is not None:
+            accelerator.wait_for_everyone()
+            unwrapped_model = accelerator.unwrap_model(model)
+            unwrapped_model.save_pretrained(
+                args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
+            )
+            if accelerator.is_main_process:
+                tokenizer.save_pretrained(args.output_dir)
+                if args.push_to_hub:
+                    repo.push_to_hub(commit_message="End of training", auto_lfs_prune=True)
 
 # these functions are heavily influenced by the HF squad_metrics.py script
 def normalize_text(s):
@@ -363,8 +510,6 @@ def calculate_f1_em(prediction_label_ids, prediction_predictions):
     for (gold_ans, pred) in zip(prediction_label_ids, prediction_predictions):
         gold_answers = gold_ans['answers']['text']
         prediction = pred['prediction_text']
-        # if len(gold_answers) > 1:
-        #     import pdb; pdb.set_trace()
 
         f1_score = max((compute_f1(prediction, answer)) for answer in gold_answers)
         em_score = max((compute_exact_match(prediction, answer)) for answer in gold_answers)

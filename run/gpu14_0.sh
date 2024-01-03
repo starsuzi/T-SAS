@@ -1,2 +1,0 @@
-bash run/noTrainer/peft/context/test_time_tuning/squad/xl/do_filtering/instance/run_squad_instance_filter_gpu14_0_0.sh
-bash run/noTrainer/peft/context/test_time_tuning/squad/xl/do_filtering/instance/run_squad_instance_filter_gpu14_0.sh
