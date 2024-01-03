@@ -33,8 +33,8 @@ $ gzip -d biencoder-nq-dev.json.gz
 Then, we should preprocess datasets as follows:
 ```bash
 $ python preprocess/preprocess_nq_dev.py
-$ python preprocess/preprocess_trivia_dev.py
 $ python preprocess/preprocess_squad_dev.py
+$ python preprocess/preprocess_trivia_dev.py
 ```
 
 ## Run
