@@ -2,7 +2,7 @@ DATE=$(date +%Y_%m_%d)/$(date +%H_%M_%S)
 MODEL=google/flan-t5-large
 DATASET_NAME=squad
 
-OUTPUT_DIR=./outputs/${DATASET_NAME}/context/baseline/model/${MODEL}/${DATE}
+OUTPUT_DIR=./outputs/${DATASET_NAME}/naive_baseline/model/${MODEL}/${DATE}
 mkdir -p ${OUTPUT_DIR}
 
 

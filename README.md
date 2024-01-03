@@ -30,4 +30,33 @@ $ python preprocess/preprocess_trivia_dev.py
 $ python preprocess/preprocess_squad_dev.py
 ```
 
+## Run
+We run our proposed T-SAS models as follows:
+```bash
+# XL size
+$ bash ./run/nq/xl/tsas/run_nq_tsas.sh
+$ bash ./run/squad/xl/tsas/run_squad_tsas.sh
+$ bash ./run/trivia/xl/tsas/run_trivia_tsas.sh
 
+# Large size
+$ bash ./run/nq/large/naive_baseline/run_nq_baseline_large.sh
+$ bash ./run/squad/large/naive_baseline/run_squad_baseline_large.sh
+$ bash ./run/trivia/large/naive_baseline/run_trivia_baseline_large.sh
+```
+Note that for the models larger than 3B, we trained
+them adopting a low-rank adaptation (LoRA)
+method.
+
+For the naïve baseline models, run as follows:
+```bash
+# XL size
+$ bash ./run/nq/xl/naive_baseline/run_nq_baseline.sh
+$ bash ./run/squad/xl/naive_baseline/run_squad_baseline.sh
+$ bash ./run/trivia/xl/naive_baseline/run_trivia_baseline.sh
+
+# Large size
+$ bash ./run/nq/large/naive_baseline/run_nq_baseline_large.sh
+$ bash ./run/squad/large/naive_baseline/run_squad_baseline_large.sh
+$ bash ./run/trivia/large/naive_baseline/run_trivia_baseline_large.sh
+```
+## Citation

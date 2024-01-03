@@ -8,7 +8,7 @@ do
     do
         for FILTER_THRES in 0.7
         do
-            OUTPUT_DIR=./outputs/${DATASET_NAME}/context/test_time_tuning/model/${MODEL}/filter_thres/${FILTER_THRES}/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
+            OUTPUT_DIR=./outputs/${DATASET_NAME}/test_time_tuning/model/${MODEL}/filter_thres/${FILTER_THRES}/lora/mc/${MC_DROP_NUM}/epoch/${EPOCH}/${DATE}
             mkdir -p ${OUTPUT_DIR}
 
             CUDA_VISIBLE_DEVICES=2 python run_tsas.py \
