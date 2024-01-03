@@ -60,3 +60,22 @@ $ bash ./run/squad/large/naive_baseline/run_squad_baseline_large.sh
 $ bash ./run/trivia/large/naive_baseline/run_trivia_baseline_large.sh
 ```
 ## Citation
+If you found the provided code with our paper useful, we kindly request that you cite our work.
+```BibTex
+@inproceedings{DBLP:conf/emnlp/JeongBCHP23,
+  author       = {Soyeong Jeong and
+                  Jinheon Baek and
+                  Sukmin Cho and
+                  Sung Ju Hwang and
+                  Jong Park},
+  title        = {Test-Time Self-Adaptive Small Language Models for Question Answering},
+  booktitle    = {Findings of the Association for Computational Linguistics: {EMNLP}
+                  2023, Singapore, December 6-10, 2023},
+  pages        = {15459--15469},
+  publisher    = {Association for Computational Linguistics},
+  year         = {2023},
+  url          = {https://aclanthology.org/2023.findings-emnlp.1033},
+  biburl       = {https://dblp.org/rec/conf/emnlp/JeongBCHP23.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
+}
+```
