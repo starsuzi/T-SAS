@@ -88,5 +88,4 @@ If you found the provided code with our paper useful, we kindly request that you
   biburl       = {https://dblp.org/rec/conf/emnlp/JeongBCHP23.bib},
   bibsource    = {dblp computer science bibliography, https://dblp.org}
 }
-}
 ```
