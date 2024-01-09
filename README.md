@@ -75,6 +75,9 @@ If you found the provided code with our paper useful, we kindly request that you
                   Sukmin Cho and
                   Sung Ju Hwang and
                   Jong Park},
+  editor       = {Houda Bouamor and
+                  Juan Pino and
+                  Kalika Bali},
   title        = {Test-Time Self-Adaptive Small Language Models for Question Answering},
   booktitle    = {Findings of the Association for Computational Linguistics: {EMNLP}
                   2023, Singapore, December 6-10, 2023},
@@ -84,5 +87,6 @@ If you found the provided code with our paper useful, we kindly request that you
   url          = {https://aclanthology.org/2023.findings-emnlp.1033},
   biburl       = {https://dblp.org/rec/conf/emnlp/JeongBCHP23.bib},
   bibsource    = {dblp computer science bibliography, https://dblp.org}
+}
 }
 ```
